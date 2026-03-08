@@ -1,0 +1,136 @@
+.messages-page {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: 100vh;
+}
+
+.sidebar {
+  background: #1a1a2e;  /* Dark background */
+  border-right: 1px solid #2d2d44;
+  overflow-y: auto;
+}
+
+.sidebar h2 {
+  padding: 20px;
+  margin: 0;
+  border-bottom: 1px solid #2d2d44;
+  color: #ffffff;  /* White title */
+}
+
+.user-list {
+  padding: 10px;
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  margin-bottom: 5px;
+}
+
+.user-item:hover {
+  background: #2d2d44;
+}
+
+.user-item.active {
+  background: #4285f4;
+  color: white;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #6c757d;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.user-item.active .user-avatar {
+  background: white;
+  color: #4285f4;
+}
+
+.user-info {
+  flex: 1;
+}
+
+.user-name {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: #cfbcd4;  /* names */
+}
+
+.user-item.active .user-name {
+  color: white;  /* White when selected */
+}
+
+.user-role {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.user-item.active .user-role {
+  color: rgba(255,255,255,0.8);
+}
+
+.chat-area {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f0f1e;  /* Dark chat background */
+}
+
+.no-selection {
+  text-align: center;
+  color: #999;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+.error-page {
+  text-align: center;
+  padding: 40px;
+  color: #dc3545;
+}
+
+.error-page button {
+  margin-top: 20px;
+  padding: 10px 20px;
+  background: #4285f4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.no-users {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+}
+
+/* ✅ NEW: Email display under role */
+.user-email {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.user-item.active .user-email {
+  color: rgba(255, 255, 255, 0.6);
+}

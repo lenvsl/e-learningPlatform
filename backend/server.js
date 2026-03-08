@@ -264,25 +264,36 @@ app.get('/api/auth/google/url', authenticateToken, (req, res) => {
 // ============================================
 // STEP 2: Handle OAuth Callback
 // ============================================
-// app.get('/auth/google/callback', async (req, res) => {
-//   const { code, state } = req.query;  // state = user_id
-  
-//   if (!code) {
-//     return res.redirect(`${process.env.FRONTEND_URL}/error?msg=no_code`);
-//   }
+// STEP 2: Handle OAuth Callback
+app.get('/api/auth/google/callback', async (req, res) => {
+  const { code, state } = req.query; // state = user_id
 
-//   try {
-//     // Exchange code for tokens
-//     const { tokens } = await oauth2Client.getToken(code);
-    
-//     // Store tokens in database (per user!)
-//     await pool.query(
-//       `UPDATE users 
-//        SET google_access_token = $1, 
-//            google_refresh_token = $2
-//        WHERE id = $3`,
-//       [tokens.access_token, tokens.refresh_token, state]
-//     );
+  if (!code) {
+    return res.redirect(`http://localhost:3000/lecturer?drive=error`);
+  }
+
+  try {
+    const { tokens } = await oauth2Client.getToken(code);
+
+    await pool.query(
+      `UPDATE users 
+       SET google_access_token = $1, google_refresh_token = $2
+       WHERE id = $3`,
+      [tokens.access_token, tokens.refresh_token, state]
+    );
+
+    // Κλείνει το popup και ενημερώνει το parent window
+    res.send(`
+      <script>
+        window.opener?.postMessage('drive_connected', 'http://localhost:3000');
+        window.close();
+      </script>
+    `);
+  } catch (err) {
+    console.error('OAuth error:', err);
+    res.redirect(`http://localhost:3000/lecturer?drive=error`);
+  }
+});
 
 //     res.redirect(`${process.env.FRONTEND_URL}/settings?connected=true`);
 //     res.send("Google auth success");
@@ -531,7 +542,7 @@ app.post('/api/lessons/:lessonId/upload-video',
         requestBody: { role: 'reader', type: 'anyone' }
       });
 
-      const videoUrl = `https://drive.google.com/file/d/${data.id}/view`;
+      const videoUrl = `https://drive.google.com/file/d/${data.id}/preview`;
 
       // Save to DB
       await pool.query(
@@ -953,6 +964,18 @@ app.get("/api/courses", async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Error fetching courses:", err.message);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// GET all categories
+app.get("/api/categories", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name FROM course_categories WHERE is_active = TRUE AND NOT is_deleted ORDER BY name ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
     res.status(500).json({ error: "Database error" });
   }
 });

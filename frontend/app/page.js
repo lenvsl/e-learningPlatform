@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
+import Link from 'next/link'; //Link είναι το Next.js equivalent του <a> tag, πλοηγείται σε σελίδα της εφαρμογής σου χωρίς full page reload.
 
 // Custom SVG Icons
 const BookOpen = ({ className }) => (
@@ -73,16 +74,23 @@ export default function UniversityHero() {
             <span className="block text-4xl md:text-5xl mt-2">από παντού.</span>
           </h1>
           
-          <p className="text-xl md:text-xl text-gray-300 mb-12 font-light leading-relaxed">
+          <p className="text-xl md:text-xl text-gray-300 mb-2 font-light leading-relaxed">
             Ένας κόσμος ακαδημαϊκών μαθημάτων από τα τμήματα του 
             <span className="font-semibold text-purple-400"> Πανεπιστημίου Πατρών</span>.
-          </p>
-
+           </p>
+           <p className="text-md text-gray-300 mb-12 font-light leading-relaxed">             
+            <span className="font-semibold text-purple-400">
+              Αποκτήστε επιπλέον δεξιότητες με certificate από το Πανεπιστήμιο Πατρών
+            </span>.
+           </p>
           <div className="mb-16">
-            <button className="group bg-gradient-to-r from-purple-600 to-violet-600 text-white px-8 py-4 rounded-full text-lg font-semibold shadow-xl hover:shadow-2xl hover:shadow-purple-500/25 transform hover:scale-105 transition-all duration-300 hover:from-purple-700 hover:to-violet-700">
+            <Link 
+              href="/courses"
+              className="group bg-gradient-to-r from-purple-600 to-violet-600 text-white px-8 py-4 rounded-full text-lg font-semibold shadow-xl hover:shadow-2xl hover:shadow-purple-500/25 transform hover:scale-105 transition-all duration-300 hover:from-purple-700 hover:to-violet-700 inline-block"
+            >
               Εξερευνήστε Μαθήματα
               <span className="inline-block ml-2 group-hover:translate-x-1 transition-transform">→</span>
-            </button>
+            </Link>
           </div>
         </div>
 

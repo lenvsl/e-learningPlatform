@@ -31,27 +31,22 @@ export default function LoginPage() {
 
       const data = await res.json(); // Απάντηση από backend... σαν: { "token": "jwt_here" }
       
-      if (res.ok) {
-        setMessage("✅ Login successful!");
-        localStorage.setItem("token", data.token); // localStorage → κρατάς login..αποθηκεύουμε JWT      
-        
-        // Ανακατεύθυνση στο dashboard μετά από μικρή καθυστέρηση
-        // setTimeout(() => {
-          router.push("/dashboard"); // πας dashboard
-        // }, 1000);     
       
         if (res.ok) {
-  localStorage.setItem('token', data.token);
-  
-  // ✅ Trigger navbar update
-  window.dispatchEvent(new Event('storage'));
-  
-  window.location.href = '/dashboard';
-}
+          localStorage.setItem("token", data.token);
+          window.dispatchEvent(new Event('storage'));
 
-      } else {
-        setMessage(`❌ ${data.error}`);
-      }
+          // Redirect ανάλογα με role
+          const role = data.user?.role;
+          if (role === 'lecturer' || role === 'admin') {
+            window.location.href = '/lecturer';
+          } else {
+            window.location.href = '/dashboard';
+          }
+        } else {
+          setMessage(`❌ ${data.error}`);
+        }
+      
     } catch (err) {
       setMessage("❌ Network error");
     }

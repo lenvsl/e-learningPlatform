@@ -1,0 +1,520 @@
+/* ===========================
+   LECTURER PANEL
+=========================== */
+
+.lec-loading {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 60vh; gap: 14px; color: #666;
+  background: #0f0f1e;
+}
+
+.lec-spinner {
+  width: 36px; height: 36px;
+  border: 3px solid #2d2d44;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Lecturer Dashboard ── */
+.lec-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  background: #0f0f1e;
+  min-height: 100vh;
+}
+
+.lec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 36px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lec-header h1 {
+  font-size: 26px; font-weight: 700; color: #fff; margin: 0 0 4px;
+}
+
+.lec-header p { font-size: 14px; color: #888; margin: 0; }
+
+/* Buttons */
+.lec-btn-primary {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; border: none; padding: 10px 20px;
+  border-radius: 8px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.2s, transform 0.2s;
+  text-decoration: none; display: inline-block;
+  white-space: nowrap;
+}
+
+.lec-btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+.lec-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.lec-btn-ghost {
+  background: transparent; color: #aaa;
+  border: 1px solid #2d2d44; padding: 9px 16px;
+  border-radius: 8px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.2s;
+  text-decoration: none; display: inline-block;
+  white-space: nowrap;
+}
+
+.lec-btn-ghost:hover { border-color: #667eea; color: #fff; }
+
+.lec-btn-sm {
+  background: #2d2d44; color: #ccc; border: none;
+  padding: 6px 12px; border-radius: 6px;
+  font-size: 12px; cursor: pointer; transition: all 0.15s;
+  text-decoration: none; display: inline-flex;
+  align-items: center; gap: 4px; white-space: nowrap;
+}
+
+.lec-btn-sm:hover { background: #3d3d5c; color: #fff; }
+
+.lec-btn-danger { background: rgba(248,113,113,0.1) !important; color: #f87171 !important; }
+.lec-btn-danger:hover { background: rgba(248,113,113,0.2) !important; }
+
+.lec-btn-upload { background: rgba(102,126,234,0.12) !important; color: #a78bfa !important; }
+.lec-btn-upload:hover { background: rgba(102,126,234,0.22) !important; }
+.lec-btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Status badges */
+.lec-status {
+  font-size: 11px; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.status-draft     { background: rgba(156,163,175,0.12); color: #9ca3af; }
+.status-published { background: rgba(52,211,153,0.12);  color: #34d399; }
+.status-archived  { background: rgba(248,113,113,0.12); color: #f87171; }
+
+/* Course grid */
+.lec-courses-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.lec-course-card {
+  background: #1a1a2e;
+  border: 1px solid #2d2d44;
+  border-radius: 12px;
+  padding: 20px;
+  text-decoration: none;
+  display: block;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.lec-course-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102,126,234,0.12);
+}
+
+.lec-card-top {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 12px;
+}
+
+.lec-card-meta { font-size: 12px; color: #666; }
+
+.lec-course-card h3 {
+  font-size: 15px; font-weight: 600; color: #fff;
+  margin: 0 0 12px; line-height: 1.4;
+}
+
+.lec-card-footer {
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: #666;
+}
+
+.lec-card-arrow {
+  position: absolute; right: 18px; bottom: 18px;
+  font-size: 18px; color: #2d2d44;
+  transition: color 0.2s, right 0.2s;
+}
+
+.lec-course-card:hover .lec-card-arrow { color: #667eea; right: 14px; }
+
+/* Empty */
+.lec-empty {
+  text-align: center; padding: 60px 24px;
+  color: #555; display: flex; flex-direction: column;
+  align-items: center; gap: 16px;
+}
+
+.lec-empty span { font-size: 48px; }
+.lec-empty p { font-size: 15px; margin: 0; }
+
+/* ── Course Management Page ── */
+.lec-course-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+  background: #0f0f1e;
+  min-height: 100vh;
+}
+
+.lec-back {
+  font-size: 13px; color: #667eea; text-decoration: none;
+  transition: color 0.2s; display: inline-block; margin-bottom: 20px;
+}
+
+.lec-back:hover { color: #a78bfa; }
+
+.lec-course-topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+}
+
+.lec-course-topbar-right {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+
+.lec-course-header {
+  background: #1a1a2e;
+  border: 1px solid #2d2d44;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+.lec-course-title-row {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 16px;
+  margin-bottom: 10px; flex-wrap: wrap;
+}
+
+.lec-course-title-row h1 {
+  font-size: 22px; font-weight: 700; color: #fff; margin: 0;
+}
+
+.lec-course-pills {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+
+.lec-course-pills span {
+  font-size: 11px; background: #2d2d44; color: #888;
+  padding: 3px 10px; border-radius: 20px;
+}
+
+.lec-course-header > p { font-size: 14px; color: #888; margin: 0; }
+
+/* Sections */
+.lec-sections-header {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 18px;
+}
+
+.lec-sections-header h2 {
+  font-size: 18px; font-weight: 600; color: #fff; margin: 0;
+}
+
+.lec-empty-sections {
+  text-align: center; padding: 40px;
+  color: #555; background: #1a1a2e;
+  border: 1px dashed #2d2d44; border-radius: 12px;
+}
+
+.lec-section-block {
+  background: #1a1a2e;
+  border: 1px solid #2d2d44;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.lec-section-header {
+  display: flex; justify-content: space-between;
+  align-items: center; padding: 14px 18px;
+  background: #1e1e36; border-bottom: 1px solid #2d2d44;
+  flex-wrap: wrap; gap: 10px;
+}
+
+.lec-section-title-row {
+  display: flex; align-items: center; gap: 10px;
+}
+
+.lec-section-icon { font-size: 14px; }
+
+.lec-section-header h3 {
+  font-size: 14px; font-weight: 600; color: #fff; margin: 0;
+}
+
+.lec-section-actions { display: flex; gap: 8px; }
+
+.lec-free-tag {
+  font-size: 10px; font-weight: 600;
+  background: rgba(52,211,153,0.12); color: #34d399;
+  padding: 2px 8px; border-radius: 4px;
+}
+
+/* Lessons */
+.lec-lessons-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+
+.lec-no-lessons { font-size: 12px; color: #555; text-align: center; padding: 16px; margin: 0; }
+
+.lec-lesson-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 12px; border-radius: 8px;
+  background: transparent; transition: background 0.15s;
+  flex-wrap: wrap;
+}
+
+.lec-lesson-row:hover { background: #0f0f1e; }
+
+.lec-lesson-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+
+.lec-lesson-type-icon { font-size: 12px; color: #555; flex-shrink: 0; }
+
+.lec-lesson-title { font-size: 13px; color: #ddd; margin: 0; }
+
+.lec-lesson-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+
+.lec-has-video { font-size: 11px; color: #34d399; }
+.lec-no-video  { font-size: 11px; color: #f59e0b; }
+
+.lec-video-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.lec-upload-error { font-size: 11px; color: #f87171; }
+
+.lec-spin {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: #a78bfa; border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* ── Modal ── */
+.lec-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 16px;
+}
+
+.lec-modal {
+  background: #1a1a2e;
+  border: 1px solid #2d2d44;
+  border-radius: 16px;
+  width: 100%; max-width: 560px;
+  max-height: 90vh; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+
+.lec-modal-sm { max-width: 420px; }
+
+.lec-modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 20px 24px; border-bottom: 1px solid #2d2d44;
+}
+
+.lec-modal-header h2 { font-size: 17px; font-weight: 700; color: #fff; margin: 0; }
+
+.lec-modal-close {
+  background: transparent; border: none; color: #666;
+  font-size: 16px; cursor: pointer; padding: 4px 8px;
+  border-radius: 4px; transition: color 0.2s;
+}
+
+.lec-modal-close:hover { color: #fff; }
+
+.lec-modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+.lec-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #2d2d44;
+  display: flex; justify-content: flex-end; gap: 10px;
+}
+
+/* Form fields */
+.lec-field { display: flex; flex-direction: column; gap: 6px; }
+
+.lec-field label { font-size: 12px; color: #888; font-weight: 500; }
+
+.lec-field input,
+.lec-field select,
+.lec-field textarea {
+  background: #0f0f1e; border: 1px solid #2d2d44;
+  border-radius: 8px; color: #fff; padding: 10px 14px;
+  font-size: 14px; outline: none; transition: border-color 0.2s;
+  width: 100%; box-sizing: border-box;
+}
+
+.lec-field input:focus,
+.lec-field select:focus,
+.lec-field textarea:focus { border-color: #667eea; }
+
+.lec-field input::placeholder,
+.lec-field textarea::placeholder { color: #444; }
+
+.lec-field textarea { min-height: 90px; resize: vertical; }
+
+.lec-field select option { background: #1a1a2e; }
+
+.lec-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.lec-checkbox-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: #aaa; cursor: pointer;
+}
+
+.lec-checkbox-label input { width: auto; cursor: pointer; }
+
+.lec-error {
+  font-size: 13px; color: #f87171;
+  background: rgba(248,113,113,0.08);
+  border: 1px solid rgba(248,113,113,0.2);
+  border-radius: 8px; padding: 10px 14px; margin: 0;
+}
+
+@media (max-width: 600px) {
+  .lec-field-row { grid-template-columns: 1fr; }
+  .lec-course-topbar { flex-direction: column; align-items: flex-start; }
+}
+
+/* ── Drive Banner ── */
+.lec-drive-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: 12px 18px; border-radius: 10px;
+  margin-bottom: 28px; font-size: 13px;
+}
+
+.drive-ok {
+  background: rgba(52,211,153,0.08);
+  border: 1px solid rgba(52,211,153,0.25);
+  color: #34d399;
+}
+
+.drive-warn {
+  background: rgba(251,191,36,0.08);
+  border: 1px solid rgba(251,191,36,0.25);
+  color: #fbbf24;
+}
+
+.lec-btn-connect-drive {
+  background: linear-gradient(135deg, #4285f4, #34a853);
+  color: #fff; border: none; padding: 7px 16px;
+  border-radius: 7px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.2s; white-space: nowrap;
+}
+
+.lec-btn-connect-drive:hover { opacity: 0.88; }
+
+/* ── Inline Edit ── */
+.lec-btn-edit {
+  background: transparent;
+  border: 1px dashed #3d3d5c;
+  color: #666; padding: 6px 14px;
+  border-radius: 7px; font-size: 12px;
+  cursor: pointer; margin-top: 12px;
+  transition: all 0.2s;
+}
+.lec-btn-edit:hover { border-color: #667eea; color: #a78bfa; }
+
+.lec-edit-form {
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.lec-edit-actions {
+  display: flex; justify-content: flex-end;
+  gap: 10px; padding-top: 8px;
+  border-top: 1px solid #2d2d44;
+}
+
+/* ── Delete button on card ── */
+.lec-card-delete {
+  position: absolute; bottom: 14px; left: 14px;
+  background: #ef4444;
+  border: none;
+  color: #fff; border-radius: 6px;
+  padding: 5px 10px; font-size: 13px;
+  cursor: pointer; opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 2;
+}
+.lec-course-card:hover .lec-card-delete { opacity: 1; }
+.lec-card-delete:hover { background: #dc2626; }
+
+/* ── Quiz Section ── */
+.lec-quiz-section {
+  margin-top: 32px;
+  background: #1a1a2e;
+  border: 1px solid #2d2d44;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.lec-quiz-subtitle {
+  font-size: 12px; color: #666; margin: 4px 0 0;
+}
+
+.lec-quiz-exists {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 16px; border-radius: 8px;
+  background: rgba(52,211,153,0.08);
+  border: 1px solid rgba(52,211,153,0.2);
+  color: #34d399; font-size: 13px; flex-wrap: wrap;
+}
+
+.lec-quiz-pass {
+  margin-left: auto; font-size: 12px;
+  background: rgba(52,211,153,0.12);
+  padding: 3px 10px; border-radius: 20px;
+}
+
+.lec-quiz-panel {
+  display: flex; flex-direction: column; gap: 16px;
+  margin-top: 16px;
+}
+
+.lec-question-block {
+  background: #0f0f1e;
+  border: 1px solid #2d2d44;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.lec-question-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; font-weight: 600; color: #a78bfa;
+}
+
+.lec-options-grid {
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.lec-option-row {
+  display: flex; align-items: center; gap: 10px;
+}
+
+.lec-option-row input[type="radio"] {
+  width: auto; accent-color: #667eea; cursor: pointer; flex-shrink: 0;
+}
+
+.lec-option-row input[type="text"] {
+  flex: 1; background: #1a1a2e; border: 1px solid #2d2d44;
+  border-radius: 6px; color: #fff; padding: 8px 12px;
+  font-size: 13px; outline: none;
+}
+
+.lec-option-row input[type="text"]:focus { border-color: #667eea; }
+
+.lec-option-hint { font-size: 11px; color: #555; margin: 0; }
+
+.lec-success {
+  font-size: 13px; color: #34d399;
+  background: rgba(52,211,153,0.08);
+  border: 1px solid rgba(52,211,153,0.2);
+  border-radius: 8px; padding: 10px 14px; margin: 0;
+}

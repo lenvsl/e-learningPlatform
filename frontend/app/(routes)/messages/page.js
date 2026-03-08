@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import PrivateChat from '../components/Chat';
+import PrivateChat from '../../components/PrivateChat';
 import './messages.css';
 
 export default function MessagesPage() {

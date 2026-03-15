@@ -33,7 +33,7 @@ export default function LoginPage() {
       
       
         if (res.ok) {
-          localStorage.setItem("token", data.token);
+          sessionStorage.setItem("token", data.token);
           window.dispatchEvent(new Event('storage'));
 
           // Redirect ανάλογα με role

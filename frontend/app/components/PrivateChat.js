@@ -22,7 +22,7 @@ const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail
 
   // Fetch message history
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     setLoading(true);
     
     fetch(`http://localhost:5000/api/messages/${otherUserId}`, {

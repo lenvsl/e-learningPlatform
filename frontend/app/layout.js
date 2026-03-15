@@ -15,14 +15,14 @@ export default function RootLayout({ children }) {
   }, []);
 
   const checkAuth = () => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUser(payload);
         setIsLoggedIn(true);
       } catch {
-        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
         setIsLoggedIn(false);
       }
     } else {
@@ -34,7 +34,7 @@ export default function RootLayout({ children }) {
   const dashboardHref = user?.role === 'lecturer' || user?.role === 'admin' ? '/lecturer' : '/dashboard';
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     setIsLoggedIn(false);
     setUser(null);
     window.location.href = '/';

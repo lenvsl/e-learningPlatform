@@ -36,7 +36,7 @@ export default function CoursePage() {
   const [videoError, setVideoError] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
 
     if (token) {
       try {
@@ -93,7 +93,7 @@ export default function CoursePage() {
 
   const fetchVideo = async (lessonId) => {
     setVideoLoading(true);
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     try {
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       const res = await fetch(`http://localhost:5000/api/lessons/${lessonId}/video`, { headers });
@@ -118,7 +118,7 @@ export default function CoursePage() {
   };
 
   const handleEnroll = async () => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
 
     setEnrolling(true);

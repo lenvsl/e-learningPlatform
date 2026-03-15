@@ -27,7 +27,7 @@ function PaymentContent() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
 
     try {
@@ -74,7 +74,7 @@ function PaymentContent() {
 
   const handlePay = async () => {
     if (!isFormValid) return;
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     setPaying(true);
     setError(null);
 

@@ -12,7 +12,7 @@ export default function MessagesPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     
     const moveUserToTop = (userId) => {
   setUsers(prev => {

@@ -47,7 +47,7 @@ export default function LecturerCoursePage() {
   const [quizError, setQuizError]   = useState(null);
   const [quizSuccess, setQuizSuccess] = useState(false);
 
-  const token = () => localStorage.getItem('token');
+  const token = () => sessionStorage.getItem('token');
   const headers = () => ({ 'Authorization': `Bearer ${token()}` });
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function LecturerCoursePage() {
         if (allLessons.length > 0) {
           const lastLesson = allLessons[allLessons.length - 1];
           fetch(`http://localhost:5000/api/lessons/${lastLesson.id}/quiz-check`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
           }).then(r => r.ok ? r.json() : null).then(q => { if (q) setQuiz(q); }).catch(() => {});
         }
         setEditForm({

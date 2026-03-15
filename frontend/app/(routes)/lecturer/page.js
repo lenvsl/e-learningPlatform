@@ -24,44 +24,6 @@ export default function LecturerPage() {
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
 
-  const [driveConnected, setDriveConnected] = useState(null); // null=unknown, true, false
-
-  // Check Drive status on mount
-  const checkDriveStatus = async (tok) => {
-    try {
-      const res = await fetch('http://localhost:5000/api/auth/google/status', {
-        headers: { 'Authorization': `Bearer ${tok}` }
-      });
-      const data = await res.json();
-      setDriveConnected(data.connected);
-    } catch { setDriveConnected(false); }
-  };
-
-  // Connect Google Drive — opens popup
-  const connectDrive = async () => {
-    const tok = localStorage.getItem('token');
-    try {
-      const res = await fetch('http://localhost:5000/api/auth/google/url', {
-        headers: { 'Authorization': `Bearer ${tok}` }
-      });
-      const data = await res.json();
-      
-      // Open Google auth in popup
-      const popup = window.open(data.auth_url, 'google_auth',
-        'width=500,height=600,left=400,top=100');
-
-      // Listen for success message from popup
-      const handler = (e) => {
-        if (e.data === 'drive_connected') {
-          setDriveConnected(true);
-          window.removeEventListener('message', handler);
-          popup?.close();
-        }
-      };
-      window.addEventListener('message', handler);
-    } catch { alert('Σφάλμα σύνδεσης με Google Drive'); }
-  };
-
   // New course form
   const [form, setForm] = useState({
     title: '', slug: '', short_description: '', description: '',
@@ -183,20 +145,6 @@ export default function LecturerPage() {
         <button className="lec-btn-primary" onClick={() => setShowNew(true)}>
           ＋ Νέο Μάθημα
         </button>
-      </div>
-
-      {/* Google Drive status banner */}
-      <div className={`lec-drive-banner ${driveConnected === true ? 'drive-ok' : 'drive-warn'}`}>
-        {driveConnected === true ? (
-          <span>✅ Google Drive συνδεδεμένο — μπορείς να ανεβάσεις βίντεο</span>
-        ) : driveConnected === false ? (
-          <>
-            <span>⚠️ Google Drive <strong>δεν είναι συνδεδεμένο</strong> — δεν θα μπορείς να ανεβάσεις βίντεο</span>
-            <button className="lec-btn-connect-drive" onClick={connectDrive}>
-              🔗 Σύνδεση Google Drive
-            </button>
-          </>
-        ) : null}
       </div>
 
       {/* Course list */}

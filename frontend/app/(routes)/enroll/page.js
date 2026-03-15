@@ -31,7 +31,7 @@ function EnrollContent() {
   const [done, setDone]       = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (!token) {
       router.push(`/login?redirect=/enroll${courseId ? `?course=${courseId}` : ''}`);
       return;
@@ -66,7 +66,7 @@ function EnrollContent() {
   }, [courseId]);
 
   const handleEnroll = async () => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
 
     // Αν έχει τιμή → πήγαινε στην οθόνη πληρωμής
     const isFree = !course?.price || course.price === '0.00';

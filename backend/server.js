@@ -265,7 +265,7 @@ app.get('/api/auth/google/url', authenticateToken, (req, res) => {
 // STEP 2: Handle OAuth Callback
 // ============================================
 // STEP 2: Handle OAuth Callback
-app.get('/api/auth/google/callback', async (req, res) => {
+app.get('/auth/google/callback', async (req, res) => {
   const { code, state } = req.query; // state = user_id
 
   if (!code) {
@@ -456,6 +456,8 @@ app.get('/api/auth/google/callback', async (req, res) => {
 //   }
 // );
 
+
+// Upload vidoe endpoint
 app.post('/api/lessons/:lessonId/upload-video',
   authenticateToken,
   upload.single('video'),
@@ -471,49 +473,18 @@ app.post('/api/lessons/:lessonId/upload-video',
     }
 
     try {
-      // Get tokens from DB
-      const userTokens = await pool.query(
-        'SELECT google_refresh_token FROM users WHERE id = $1',
-        [req.user.id]
-      );
-
-      if (!userTokens.rows[0]?.google_refresh_token) {
-        await unlink(req.file.path);
-        return res.status(401).json({ 
-          error: 'Google Drive not connected',
-          action: 'connect_drive'
-        });
-      }
-
-      // ✅ FORCE REFRESH BEFORE UPLOAD
-      console.log('🔄 Refreshing token...');
-      
+      // ✅ ΑΠΛΟ: Παίρνει token από .env — ένα για όλους
       oauth2Client.setCredentials({
-        refresh_token: userTokens.rows[0].google_refresh_token
-      });
-
-      const { credentials } = await oauth2Client.refreshAccessToken();
-
-      // Save new access token
-      await pool.query(
-        'UPDATE users SET google_access_token = $1 WHERE id = $2',
-        [credentials.access_token, req.user.id]
-      );
-
-      // Use fresh token for upload
-      oauth2Client.setCredentials({
-        access_token: credentials.access_token,
-        refresh_token: userTokens.rows[0].google_refresh_token
+        refresh_token: process.env.GOOGLE_REFRESH_TOKEN
       });
 
       const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-      // Upload
+      // Upload στο Drive
       const { data } = await drive.files.create({
         requestBody: {
           name: `lesson_${lessonId}_${Date.now()}.mp4`,
-         // mimeType: req.file.mimetype,
-          parents: [process.env.FOLDER_ID] //Upload to my Drive file
+          parents: [process.env.FOLDER_ID]
         },
         media: {
           mimeType: req.file.mimetype,
@@ -522,21 +493,7 @@ app.post('/api/lessons/:lessonId/upload-video',
         fields: 'id'
       });
 
-// Upload to LECTURER'S Drive
-//       const { data } = await drive.files.create({
-//         requestBody: {
-//           name: `lesson_${lessonId}_${Date.now()}.mp4`,
-//           mimeType: req.file.mimetype,
-//           parents: [process.env.FOLDER_ID]
-//         },
-//         media: {
-//           mimeType: req.file.mimetype,
-//           body: fs.createReadStream(req.file.path)
-//         },
-//         fields: 'id, webViewLink'
-//       });
-
-      // Make public
+      // Κάνε public
       await drive.permissions.create({
         fileId: data.id,
         requestBody: { role: 'reader', type: 'anyone' }
@@ -544,9 +501,13 @@ app.post('/api/lessons/:lessonId/upload-video',
 
       const videoUrl = `https://drive.google.com/file/d/${data.id}/preview`;
 
-      // Save to DB
+      // ✅ FIX: video_path (όχι video_url)
       await pool.query(
-        'UPDATE lessons SET video_url = $1, drive_file_id = $2, video_filename = $3, video_size = $4 WHERE id = $5',
+        `UPDATE lessons 
+         SET video_path = $1, drive_file_id = $2, 
+             video_filename = $3, video_size = $4,
+             updated_at = NOW()
+         WHERE id = $5`,
         [videoUrl, data.id, req.file.originalname, req.file.size, lessonId]
       );
 
@@ -560,7 +521,6 @@ app.post('/api/lessons/:lessonId/upload-video',
     } catch (err) {
       console.error('Upload error:', err);
       if (req.file?.path) await unlink(req.file.path).catch(() => {});
-      
       res.status(500).json({ error: 'Upload failed: ' + err.message });
     }
   }
@@ -612,6 +572,46 @@ app.get("/", (req, res) => {
   res.send("E-learning API running!");
 });
 
+// //-------------------------------------------
+// //----------- Authenticate Token ------------
+// //-------------------------------------------
+
+// Protected route - μόνο με token
+app.get("/api/me", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, email, first_name, last_name, role FROM users WHERE id = $1",
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("❌ Error in /api/me:", err.message);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Middleware για έλεγχο JWT token - Function
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // "Bearer TOKEN"
+
+  if (!token) {
+    return res.status(401).json({ error: "Access denied. No token provided." });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid token." });
+    }
+    req.user = user; // βάζουμε τον χρήστη στο request
+    next();
+  });
+}
 //------------------------------
 //----------- Users ------------
 //------------------------------
@@ -683,10 +683,17 @@ app.post("/api/login", async (req, res) => {
     }
 
     // Δημιουργία JWT token
-    const token = jwt.sign( // jwt.sign(payload, secret, options)
-      { id: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: "1h" }
+    // Το token περιέχει ενσωματωμένα τα στοιχεία του χρήστη (id, email, role), 
+    // κρυπτογραφημένα με το JWT_SECRET. Κανείς δεν μπορεί να το πλαστογραφήσει χωρίς το secret.
+    const token = jwt.sign(                                 // jwt.sign(payload, secret, options)
+      { id: user.id, 
+        email: user.email, 
+        role: user.role 
+        // first_name: user.first_name,
+        // last_name: user.last_name,
+      },  // payload
+      JWT_SECRET,          // μυστικό κλειδί του server
+      { expiresIn: "7d" }  // λήγει σε 7 days
     );
 
     res.json({
@@ -2680,46 +2687,46 @@ app.get("/api/courses/:courseId/certificates", authenticateToken, async (req, re
 //   }
 // );
 
-// //--------------------------------------------------------
-// //-- Get Video Link - Get Video (with enrollment check) --
-// //--------------------------------------------------------
-// // Πάρε το video URL για ένα lesson
-// app.get("/api/lessons/:lessonId/video", authenticateToken, async (req, res) => {
-//   try {
-//     const result = await pool.query(
-//       `SELECT l.video_url, l.is_free, cs.course_id
-//        FROM lessons l
-//        JOIN course_sections cs ON cs.id = l.section_id
-//        WHERE l.id = $1`,
-//       [req.params.lessonId]
-//     );
+//--------------------------------------------------------
+//-- Get Video Link - Get Video (with enrollment check) --
+//--------------------------------------------------------
+// Πάρε το video URL για ένα lesson
+app.get("/api/lessons/:lessonId/video", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT l.video_path, l.is_free, cs.course_id
+       FROM lessons l
+       JOIN course_sections cs ON cs.id = l.section_id
+       WHERE l.id = $1`,
+      [req.params.lessonId]
+    );
 
-//     if (!result.rows[0]?.video_url) {
-//       return res.status(404).json({ error: "No video" });
-//     }
+    if (!result.rows[0]?.video_path) {
+      return res.status(404).json({ error: "No video" });
+    }
 
-//     const lesson = result.rows[0];
+    const lesson = result.rows[0];
 
-//     // Application-level access control
-//     if (!lesson.is_free) {
-//       const enrolled = await pool.query(
-//         `SELECT 1 FROM course_enrollments 
-//          WHERE student_id = $1 AND course_id = $2 AND status = 'active'`,
-//         [req.user.id, lesson.course_id]
-//       );
+    // Application-level access control
+    if (!lesson.is_free) {
+      const enrolled = await pool.query(
+        `SELECT 1 FROM course_enrollments 
+         WHERE student_id = $1 AND course_id = $2 AND status = 'active'`,
+        [req.user.id, lesson.course_id]
+      );
 
-//       if (enrolled.rows.length === 0) {
-//         return res.status(403).json({ error: "Must enroll" });
-//       }
-//     }
+      if (enrolled.rows.length === 0) {
+        return res.status(403).json({ error: "Must enroll" });
+      }
+    }
 
-//     res.json({ video_url: lesson.video_url });
+    res.json({ video_url: lesson.video_path });
 
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Error" });
-//   }
-// });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error" });
+  }
+});
 
 // //---------deletevideo----------
 // // Διαγραφή video από Google Drive
@@ -3672,46 +3679,7 @@ app.get("/api/my-payments", authenticateToken, async (req, res) => {
 // app.use("/uploads", express.static("uploads")); // στατικό σερβίρισμα αρχείων
 
 
-// //-------------------------------------------
-// //----------- Authenticate Token ------------
-// //-------------------------------------------
 
-// Protected route - μόνο με token
-app.get("/api/me", authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT id, email, first_name, last_name, role FROM users WHERE id = $1",
-      [req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error("❌ Error in /api/me:", err.message);
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// Middleware για έλεγχο JWT token
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1]; // "Bearer TOKEN"
-
-  if (!token) {
-    return res.status(401).json({ error: "Access denied. No token provided." });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: "Invalid token." });
-    }
-    req.user = user; // βάζουμε τον χρήστη στο request
-    next();
-  });
-}
 
 
 // //-------------------------------------------

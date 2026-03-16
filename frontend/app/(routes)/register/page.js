@@ -7,6 +7,7 @@ export default function RegisterPage() {
     last_name: "",
     email: "",
     password: "",
+    role: "student",
   });
   const [message, setMessage] = useState("");
 
@@ -27,7 +28,11 @@ export default function RegisterPage() {
 
       const data = await res.json();
       if (res.ok) {
-        setMessage("✅ Registration successful!");
+        if (form.role === 'lecturer') {
+          setMessage("✅ Ο λογαριασμός σας δημιουργήθηκε! Αναμένετε έγκριση από τον διαχειριστή.");
+        } else {
+          setMessage("✅ Εγγραφή επιτυχής! Μπορείτε τώρα να συνδεθείτε.");
+        }
       } else {
         setMessage(`❌ ${data.error}`);
       }
@@ -124,6 +129,42 @@ export default function RegisterPage() {
               placeholder="••••••••"
               className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
             />
+          </div>
+
+          {/* Role */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Εγγράφομαι ως
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, role: 'student' })}
+                className={`py-3 rounded-lg border-2 font-medium text-sm transition-all ${
+                  form.role === 'student'
+                    ? 'border-purple-500 bg-purple-600/20 text-purple-300'
+                    : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'
+                }`}
+              >
+                🎓 Φοιτητής
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, role: 'lecturer' })}
+                className={`py-3 rounded-lg border-2 font-medium text-sm transition-all ${
+                  form.role === 'lecturer'
+                    ? 'border-violet-500 bg-violet-600/20 text-violet-300'
+                    : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'
+                }`}
+              >
+                👨‍🏫 Καθηγητής
+              </button>
+            </div>
+            {form.role === 'lecturer' && (
+              <p className="mt-2 text-xs text-yellow-400/80">
+                ⚠️ Ο λογαριασμός καθηγητή χρειάζεται έγκριση από διαχειριστή πριν ενεργοποιηθεί.
+              </p>
+            )}
           </div>
 
           {/* Submit */}

@@ -58,9 +58,9 @@ export default function StudentDashboard() {
     : 0;
 
   const stats = [
-    { icon: '📚', value: enrollments.length, label: 'Εγγεγραμμένα Μαθήματα' },
-    { icon: '📈', value: `${avgProgress}%`,  label: 'Μέση Πρόοδος' },
-    { icon: '🏆', value: certificates.length, label: 'Πιστοποιητικά' },
+    { icon: '📚', value: enrollments.length,  label: 'Εγγεγραμμένα Μαθήματα' },
+    { icon: '📈', value: `${avgProgress}%`,   label: 'Μέση Πρόοδος' },
+    { icon: '🏆', value: certificates.length, label: 'Πιστοποιητικά', href: '/certificates' },
     { icon: '✅', value: enrollments.filter(e => e.status === 'completed').length, label: 'Ολοκληρωμένα' },
   ];
 
@@ -68,6 +68,7 @@ export default function StudentDashboard() {
     { icon: '➕', label: 'Εγγραφή σε Μάθημα',    desc: 'Βρες και εγγράψου σε νέο μάθημα', href: '/enroll' },
     { icon: '🔍', label: 'Εξερεύνηση Μαθημάτων', desc: 'Δες όλα τα διαθέσιμα μαθήματα',  href: '/courses' },
     { icon: '💬', label: 'Μηνύματα',              desc: 'Επικοινωνήστε με καθηγητές',       href: '/messages' },
+    { icon: '🏆', label: 'Πιστοποιητικά',         desc: 'Δες τα πιστοποιητικά σου',        href: '/certificates' },
   ];
 
   if (loading) return (
@@ -91,13 +92,23 @@ export default function StudentDashboard() {
       {/* Stats */}
       <div className="db-stats">
         {stats.map((s, i) => (
-          <div key={i} className="db-stat-card">
-            <span className="db-stat-icon">{s.icon}</span>
-            <div>
-              <strong>{s.value}</strong>
-              <p>{s.label}</p>
+          s.href ? (
+            <Link key={i} href={s.href} className="db-stat-card" style={{ textDecoration:'none' }}>
+              <span className="db-stat-icon">{s.icon}</span>
+              <div>
+                <strong>{s.value}</strong>
+                <p>{s.label}</p>
+              </div>
+            </Link>
+          ) : (
+            <div key={i} className="db-stat-card">
+              <span className="db-stat-icon">{s.icon}</span>
+              <div>
+                <strong>{s.value}</strong>
+                <p>{s.label}</p>
+              </div>
             </div>
-          </div>
+          )
         ))}
       </div>
 

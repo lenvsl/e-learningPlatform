@@ -454,6 +454,27 @@
   padding-left: 4px;
 }
 
+/* Quizzes */
+.cp-quiz-cta {
+  padding: 16px;
+  border-top: 1px solid #2d2d44;
+  margin-top: auto;
+}
+
+.cp-quiz-btn {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; text-decoration: none;
+  border-radius: 10px; padding: 14px;
+  font-size: 14px; font-weight: 700;
+  text-align: center; transition: opacity 0.2s;
+}
+
+.cp-quiz-btn span { font-size: 11px; font-weight: 400; opacity: 0.8; }
+.cp-quiz-btn:hover { opacity: 0.9; }
+
+
 /* ===========================
    RESPONSIVE
 =========================== */

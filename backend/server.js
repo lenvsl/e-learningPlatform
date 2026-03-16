@@ -648,7 +648,7 @@ app.post("/api/register", async (req, res) => {
       `INSERT INTO users (email, password_hash, first_name, last_name, role) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, email, first_name, last_name, role, created_at`,
-      [email, passwordHash, first_name, last_name, role || "student"]
+      [email, passwordHash, first_name, last_name, role === "lecturer" ? "pending_lecturer" : (role || "student")]
     );
 
     res.status(201).json(result.rows[0]);
@@ -688,8 +688,8 @@ app.post("/api/login", async (req, res) => {
     const token = jwt.sign(                                 // jwt.sign(payload, secret, options)
       { id: user.id, 
         email: user.email, 
-        role: user.role 
-        // first_name: user.first_name,
+        role: user.role,
+        first_name: user.first_name,
         // last_name: user.last_name,
       },  // payload
       JWT_SECRET,          // μυστικό κλειδί του server
@@ -2296,13 +2296,52 @@ app.get("/api/quizzes/:quizId", authenticateToken, async (req, res) => {
     quizData.questions = questions.rows.map(q => ({
       id: q.id,
       question_text: q.question_text,
-      options: q.options, // JSON array
+      options: q.options,
       order_index: q.order_index
     }));
+
+    // Έλεγχος αν ο student έχει ήδη περάσει αυτό το quiz
+    if (req.user.role === 'student') {
+      const passed = await pool.query(
+        `SELECT qa.id FROM quiz_attempts qa
+         JOIN course_enrollments ce ON ce.id = qa.enrollment_id
+         WHERE qa.quiz_id = $1 AND ce.student_id = $2 AND qa.score >= 70
+         LIMIT 1`,
+        [quizId, req.user.id]
+      );
+      quizData.already_passed = passed.rows.length > 0;
+    }
 
     res.json(quizData);
   } catch (err) {
     console.error("❌ Error fetching quiz:", err.message);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// GET quiz για ένα course (student)
+app.get("/api/courses/:courseId/quiz", authenticateToken, async (req, res) => {
+  const { courseId } = req.params;
+
+  try {
+    // Βρες το quiz μέσω lessons → sections → course
+    const result = await pool.query(
+      `SELECT q.id, q.title, q.passing_grade
+      FROM quizzes q
+      JOIN lessons l ON l.id = q.lesson_id
+      JOIN course_sections cs ON cs.id = l.section_id
+      WHERE cs.course_id = $1 AND NOT l.is_deleted
+      LIMIT 1`,
+      [courseId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ quiz: null });
+    }
+
+    res.json({ quiz: result.rows[0] });
+  } catch (err) {
+    console.error("❌ Error fetching course quiz:", err.message);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -2353,7 +2392,8 @@ app.post("/api/quizzes/:quizId/submit", authenticateToken, async (req, res) => {
       [quizId]
     );
 
-    const { lesson_id, passing_score, course_id } = quizInfo.rows[0];
+    const { lesson_id, course_id } = quizInfo.rows[0];
+    const passing_score = 70;
 
 
     const enrollmentRes = await pool.query(
@@ -2393,10 +2433,10 @@ const enrollmentId = enrollmentRes.rows[0].id;
     let certificate = null;
     if (score >= passing_score && enrollment.rows.length > 0) {
       const certResult = await pool.query(
-        `INSERT INTO certificates (enrollment_id, issued_at, certificate_url)
+        `INSERT INTO certificates (enrollment_id, issued_at, certificate_path)
          VALUES ($1, NOW(), $2)
          ON CONFLICT (enrollment_id) DO NOTHING
-         RETURNING id, enrollment_id, issued_at, certificate_url`,
+         RETURNING id, enrollment_id, issued_at, certificate_path`,
         [enrollment.rows[0].id, `/certificates/${enrollment.rows[0].id}.pdf`]
       );
 
@@ -2710,8 +2750,8 @@ app.get("/api/lessons/:lessonId/video", authenticateToken, async (req, res) => {
     // Application-level access control
     if (!lesson.is_free) {
       const enrolled = await pool.query(
-        `SELECT 1 FROM course_enrollments 
-         WHERE student_id = $1 AND course_id = $2 AND status = 'active'`,
+        `SELECT 1 FROM course_enrollments
+         WHERE student_id = $1 AND course_id = $2 AND status IN ('active', 'completed')`,
         [req.user.id, lesson.course_id]
       );
 
@@ -2996,6 +3036,108 @@ app.get("/api/admin/stats/summary", authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error("❌ Error fetching summary stats:", err.message);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+//--------------------------------------------------
+//----------- Admin Endpoints ---------------------
+//--------------------------------------------------
+
+// GET all users (admin only)
+app.get("/api/admin/users", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  try {
+    const result = await pool.query(
+      `SELECT id, email, first_name, last_name, role, is_deleted, created_at
+       FROM users ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Change user role (admin only)
+app.put("/api/admin/users/:id/role", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  const { role } = req.body;
+  const allowed = ["student", "lecturer", "admin", "pending_lecturer"];
+  if (!allowed.includes(role)) return res.status(400).json({ error: "Invalid role" });
+  try {
+    const result = await pool.query(
+      `UPDATE users SET role = $1 WHERE id = $2 AND NOT is_deleted
+       RETURNING id, email, first_name, last_name, role`,
+      [role, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Soft delete user (admin only)
+app.delete("/api/admin/users/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  try {
+    const result = await pool.query(
+      `UPDATE users SET is_deleted = TRUE WHERE id = $1 AND NOT is_deleted
+       RETURNING id, email`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+    res.json({ message: "User deleted", user: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Category CRUD (admin only)
+app.post("/api/admin/categories", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+  try {
+    const result = await pool.query(
+      `INSERT INTO course_categories (name, is_active) VALUES ($1, TRUE)
+       RETURNING id, name`,
+      [name]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.put("/api/admin/categories/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  const { name, is_active } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE course_categories SET name = $1, is_active = $2
+       WHERE id = $3 AND NOT is_deleted
+       RETURNING id, name, is_active`,
+      [name, is_active, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "Category not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.delete("/api/admin/categories/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+  try {
+    const result = await pool.query(
+      `UPDATE course_categories SET is_deleted = TRUE WHERE id = $1 AND NOT is_deleted
+       RETURNING id, name`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "Category not found" });
+    res.json({ message: "Category deleted" });
+  } catch (err) {
     res.status(500).json({ error: "Database error" });
   }
 });

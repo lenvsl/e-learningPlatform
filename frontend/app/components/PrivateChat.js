@@ -102,9 +102,6 @@ const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail
         <h3>💬 {otherUserName} </h3>
         <p className="user-email">{otherUserEmail}</p>
         </div>
-        <span className={`status ${connected ? 'online' : 'offline'}`}>
-          {connected ? '🟢 Online' : '🔴 Offline'}
-        </span>
       </div>
 
       <div className="messages">

@@ -43,7 +43,7 @@ export default function LecturerPage() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
@@ -59,7 +59,7 @@ export default function LecturerPage() {
   }, []);
 
   const loadCourses = (tok) => {
-    const hdrs = { 'Authorization': `Bearer ${tok || localStorage.getItem('token')}` };
+    const hdrs = { 'Authorization': `Bearer ${tok || sessionStorage.getItem('token')}` };
     Promise.all([
       fetch('http://localhost:5000/api/lecturer/courses', { headers: hdrs }).then(r => r.json()),
       fetch('http://localhost:5000/api/categories').then(r => r.json()).catch(() => []),
@@ -69,7 +69,7 @@ export default function LecturerPage() {
       setCategories(Array.isArray(cats) ? cats : []);
       setInstitutions(Array.isArray(insts) ? insts : []);
       setLoading(false);
-      checkDriveStatus(tok || localStorage.getItem('token'));
+      checkDriveStatus(tok || sessionStorage.getItem('token'));
     }).catch(() => setLoading(false));
   };
 
@@ -86,7 +86,7 @@ export default function LecturerPage() {
     e.preventDefault(); // prevent Link navigation
     e.stopPropagation();
     if (!confirm(`Διαγραφή "${courseTitle}"; Αυτή η ενέργεια δεν αναιρείται.`)) return;
-    const tok = localStorage.getItem('token');
+    const tok = sessionStorage.getItem('token');
     try {
       const res = await fetch(`http://localhost:5000/api/courses/${courseId}`, {
         method: 'DELETE',
@@ -98,7 +98,7 @@ export default function LecturerPage() {
 
   const handleCreate = async () => {
     if (!form.title || !form.slug) { setCreateError('Τίτλος και slug είναι υποχρεωτικά'); return; }
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     setCreating(true);
     setCreateError(null);
     try {

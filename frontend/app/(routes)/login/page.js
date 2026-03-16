@@ -38,7 +38,9 @@ export default function LoginPage() {
 
           // Redirect ανάλογα με role
           const role = data.user?.role;
-          if (role === 'lecturer' || role === 'admin') {
+          if (role === 'admin') {
+            window.location.href = '/admin';
+          } else if (role === 'lecturer') {
             window.location.href = '/lecturer';
           } else {
             window.location.href = '/dashboard';

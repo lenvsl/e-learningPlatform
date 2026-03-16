@@ -35,6 +35,18 @@ export default function CoursePage() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
 
+  const [courseQuiz, setCourseQuiz] = useState(null);
+
+  useEffect(() => {
+    if (!isEnrolled || !courseId) return;
+    const token = sessionStorage.getItem('token');
+    fetch(`http://localhost:5000/api/courses/${courseId}/quiz`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json())
+      .then(data => { if (data.quiz) setCourseQuiz(data.quiz); })
+      .catch(() => {});
+  }, [isEnrolled, courseId]);
+
   useEffect(() => {
     const token = sessionStorage.getItem('token');
 
@@ -193,6 +205,15 @@ export default function CoursePage() {
               </div>
             ))}
           </div>
+          {/* Quiz CTA */}
+          {courseQuiz && (
+            <div className="cp-quiz-cta">
+              <a href={`/quiz/${courseQuiz.id}`} className="cp-quiz-btn">
+                🎯 Τελικό Quiz
+                <span>Πάρε το πιστοποιητικό σου</span>
+              </a>
+            </div>
+          )}
         </aside>
 
         {/* Main - Video */}

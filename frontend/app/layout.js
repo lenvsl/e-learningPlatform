@@ -31,7 +31,7 @@ export default function RootLayout({ children }) {
     }
   };
 
-  const dashboardHref = user?.role === 'lecturer' || user?.role === 'admin' ? '/lecturer' : '/dashboard';
+  const dashboardHref = user?.role === 'lecturer' ? '/lecturer' : user?.role === 'admin' ? '/admin' : '/dashboard';
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -63,7 +63,7 @@ export default function RootLayout({ children }) {
                     <Link href="/courses"
                       className="text-gray-300 hover:text-purple-400 px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 hover:bg-purple-500/10">
                       📖 Μαθήματα
-                    </Link> 
+                    </Link>
                 )}
 
                 {!isLoggedIn && (
@@ -71,7 +71,7 @@ export default function RootLayout({ children }) {
                     <Link href="/courses"
                       className="text-gray-300 hover:text-purple-400 px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 hover:bg-purple-500/10">
                       📖 Μαθήματα
-                    </Link>                  
+                    </Link>
                     <Link href="/register"
                       className="text-gray-300 hover:text-purple-400 px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 hover:bg-purple-500/10">
                       Εγγραφή
@@ -95,7 +95,7 @@ export default function RootLayout({ children }) {
 
                     <Link href={dashboardHref}
                       className="text-gray-300 hover:text-purple-400 px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 hover:bg-purple-500/10">
-                      {user?.role === 'lecturer' || user?.role === 'admin' ? '🎓 Lecturer Panel' : '📚 Dashboard'}
+                      {user?.role === 'lecturer' ? '🎓 Lecturer Panel' : user?.role === 'admin' ? '⚙️ Admin Panel' : '📚 Dashboard'}
                     </Link>
 
                     <Link href="/messages"
@@ -154,8 +154,14 @@ export default function RootLayout({ children }) {
                         </Link>
                         <Link href={dashboardHref}
                           className="text-gray-300 hover:text-purple-400 block px-3 py-2 rounded-md text-base font-medium transition-all">
-                          {user?.role === 'lecturer' || user?.role === 'admin' ? '🎓 Lecturer Panel' : '📚 Dashboard'}
+                          {user?.role === 'lecturer' ? '🎓 Lecturer Panel' : user?.role === 'admin' ? '⚙️ Admin Panel' : '📚 Dashboard'}
                         </Link>
+                        {user?.role === 'admin' && (
+                          <Link href="/admin"
+                            className="text-gray-300 hover:text-purple-400 block px-3 py-2 rounded-md text-base font-medium transition-all">
+                            ⚙️ Admin
+                          </Link>
+                        )}
                         <Link href="/messages"
                           className="text-gray-300 hover:text-purple-400 block px-3 py-2 rounded-md text-base font-medium transition-all">
                           💬 Μηνύματα

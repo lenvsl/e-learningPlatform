@@ -46,6 +46,28 @@
   display: block;
 }
 
+.cp-complete-btn {
+  margin-top: 16px;
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: 1px solid #7c3aed;
+  background: transparent;
+  color: #a78bfa;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.cp-complete-btn:hover {
+  background: #7c3aed22;
+}
+
+.cp-complete-btn.done {
+  background: #14532d33;
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
 .cp-video-placeholder {
   width: 100%;
   height: 100%;

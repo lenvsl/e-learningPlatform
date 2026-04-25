@@ -36,23 +36,60 @@ export default function CoursePage() {
   const [videoError, setVideoError] = useState(null);
 
   const [courseQuiz, setCourseQuiz] = useState(null);
+  const [completedLessons, setCompletedLessons] = useState(new Set());
+  const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
     if (!isEnrolled || !courseId) return;
     const token = sessionStorage.getItem('token');
-    fetch(`http://localhost:5000/api/courses/${courseId}/quiz`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json())
+    const headers = { 'Authorization': `Bearer ${token}` };
+
+    fetch(`http://localhost:5000/api/courses/${courseId}/quiz`, { headers })
+      .then(r => r.json())
       .then(data => { if (data.quiz) setCourseQuiz(data.quiz); })
       .catch(() => {});
+
+    fetch(`http://localhost:5000/api/courses/${courseId}/my-progress`, { headers })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.sections)) {
+          const ids = data.sections
+            .flatMap(s => s.lessons || [])
+            .filter(l => l.is_completed)
+            .map(l => l.id);
+          setCompletedLessons(new Set(ids));
+        }
+      })
+      .catch(() => {});
   }, [isEnrolled, courseId]);
+
+  const toggleComplete = async (lessonId) => {
+    const token = sessionStorage.getItem('token');
+    const isCompleted = completedLessons.has(lessonId);
+    const endpoint = isCompleted ? 'incomplete' : 'complete';
+    setCompleting(true);
+    try {
+      const res = await fetch(`http://localhost:5000/api/lessons/${lessonId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setCompletedLessons(prev => {
+          const next = new Set(prev);
+          isCompleted ? next.delete(lessonId) : next.add(lessonId);
+          return next;
+        });
+      }
+    } catch {}
+    finally { setCompleting(false); }
+  };
 
   useEffect(() => {
     const token = sessionStorage.getItem('token');
 
     if (token) {
       try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        const payload = JSON.parse(decodeURIComponent(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
         setUser(payload);
       } catch {}
     }
@@ -194,7 +231,7 @@ export default function CoursePage() {
                         onClick={() => loadLesson(lesson)}
                       >
                         <span className="cp-lesson-icon">
-                          {lesson.lesson_type === 'video' ? '▶' : '📄'}
+                          {completedLessons.has(lesson.id) ? '✅' : lesson.lesson_type === 'video' ? '▶' : '📄'}
                         </span>
                         <span className="cp-lesson-name">{lesson.title}</span>
                         {lesson.is_free && <span className="cp-free-tag">Δωρεάν</span>}
@@ -248,6 +285,30 @@ export default function CoursePage() {
                   )}
                 </div>
               )}
+
+              {selectedLesson.lesson_type === 'pdf' && (
+                <div className="cp-video-wrap">
+                  {selectedLesson.pdf_path ? (
+                    <iframe
+                      src={selectedLesson.pdf_path}
+                      className="cp-video-frame"
+                      title={selectedLesson.title}
+                    />
+                  ) : (
+                    <div className="cp-video-placeholder">
+                      <span>📭</span><p>Δεν υπάρχει PDF ακόμα.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                className={`cp-complete-btn ${completedLessons.has(selectedLesson.id) ? 'done' : ''}`}
+                onClick={() => toggleComplete(selectedLesson.id)}
+                disabled={completing}
+              >
+                {completedLessons.has(selectedLesson.id) ? '✅ Ολοκληρώθηκε' : 'Σημείωσε ως Ολοκληρωμένο'}
+              </button>
             </div>
           ) : (
             <div className="cp-empty">
@@ -350,7 +411,7 @@ export default function CoursePage() {
 
         {enrollError && <p className="cp-enroll-error">{enrollError}</p>}
 
-        {user ? (
+        {user && user.role === 'student' && (
           <button
             className="cp-enroll-cta"
             onClick={handleEnroll}
@@ -358,10 +419,6 @@ export default function CoursePage() {
           >
             {enrolling ? 'Εγγραφή...' : isFree ? '🆓 Εγγραφή Δωρεάν' : '💳 Εγγραφή'}
           </button>
-        ) : (
-          <Link href={`/login?redirect=/courses/${courseId}`} className="cp-enroll-cta">
-            Σύνδεση για Εγγραφή
-          </Link>
         )}
 
         <div className="cp-enroll-details">

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import './payment.css';
 
 function PaymentContent() {
@@ -10,7 +9,6 @@ function PaymentContent() {
   const searchParams = useSearchParams();
   const courseId = searchParams.get('course');
 
-  const [user, setUser]       = useState(null);
   const [course, setCourse]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying]   = useState(false);
@@ -31,9 +29,8 @@ function PaymentContent() {
     if (!token) { router.push('/login'); return; }
 
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = JSON.parse(decodeURIComponent(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
       if (payload.role !== 'student') { router.push('/dashboard'); return; }
-      setUser(payload);
     } catch { router.push('/login'); return; }
 
     if (!courseId) { router.push('/courses'); return; }
@@ -139,9 +136,7 @@ function PaymentContent() {
     <div className="pay-page">
 
       <div className="pay-header">
-        <Link href={`/courses/${courseId}`} className="pay-back">← Πίσω</Link>
         <h1>Ολοκλήρωση Πληρωμής</h1>
-        <p>Ασφαλής πληρωμή με κρυπτογράφηση SSL</p>
       </div>
 
       <div className="pay-body">
@@ -229,10 +224,6 @@ function PaymentContent() {
               }
             </button>
 
-            <div className="pay-secure-note">
-              <span>🔒</span>
-              <span>Τα στοιχεία σας προστατεύονται με κρυπτογράφηση 256-bit SSL</span>
-            </div>
           </div>
         </div>
 
@@ -262,11 +253,6 @@ function PaymentContent() {
             <strong>{course.price} {course.currency || '€'}</strong>
           </div>
 
-          <div className="pay-summary-badges">
-            <span>🔒 SSL</span>
-            <span>✅ Ασφαλής πληρωμή</span>
-            <span>↩️ Επιστροφή χρημάτων</span>
-          </div>
         </aside>
 
       </div>

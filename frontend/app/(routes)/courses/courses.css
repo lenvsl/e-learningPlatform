@@ -28,7 +28,44 @@
 .courses-header p {
   font-size: 15px;
   color: #888;
-  margin: 0;
+  margin: 0 0 20px;
+}
+
+.courses-search-form {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.courses-search-input {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #2d2d44;
+  background: #1a1a2e;
+  color: #e2e8f0;
+  font-size: 14px;
+  outline: none;
+}
+
+.courses-search-input:focus {
+  border-color: #7c3aed;
+}
+
+.courses-search-btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.courses-search-btn:hover {
+  background: #6d28d9;
 }
 
 /* ===========================
@@ -380,6 +417,13 @@
   margin: 0 0 22px;
 }
 
+.modal-full-desc {
+  font-size: 14px;
+  color: #aaa;
+  line-height: 1.7;
+  margin: 0;
+}
+
 .modal-info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -443,7 +487,8 @@
 
 .modal-actions {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 12px;
   margin-top: 24px;
   padding-top: 18px;
   border-top: 1px solid #2d2d44;

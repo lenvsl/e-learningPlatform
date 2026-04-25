@@ -146,7 +146,7 @@ export default function RegisterPage() {
                     : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'
                 }`}
               >
-                🎓 Φοιτητής
+                🎓 Εκπαιδευόμενος
               </button>
               <button
                 type="button"

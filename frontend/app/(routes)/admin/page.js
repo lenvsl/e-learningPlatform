@@ -196,7 +196,7 @@ export default function AdminPage() {
                       onChange={e => changeRole(u.id, e.target.value)}
                       className="role-select"
                     >
-                      <option value="student">Student</option>
+                      <option value="student">Εκπαιδευόμενος</option>
                       <option value="lecturer">Lecturer</option>
                       <option value="admin">Admin</option>
                       <option value="pending_lecturer">Pending Lecturer</option>

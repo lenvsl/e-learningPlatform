@@ -38,7 +38,7 @@ function EnrollContent() {
     }
 
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = JSON.parse(decodeURIComponent(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
       if (payload.role !== 'student') {
         router.push('/dashboard');
         return;
@@ -53,7 +53,7 @@ function EnrollContent() {
       // Δεν έχει course param — φόρτωσε όλα τα courses για επιλογή
       fetch('http://localhost:5000/api/courses')
         .then(r => r.json())
-        .then(data => { setCourse(null); setLoading(false); })
+        .then(() => { setCourse(null); setLoading(false); })
         .catch(() => setLoading(false));
       setLoading(false);
       return;
@@ -115,7 +115,7 @@ function EnrollContent() {
   );
 
   // ── No course selected — show picker ──
-  if (!courseId) return <CoursePicker user={user} />;
+  if (!courseId) return <CoursePicker />;
 
   // ── Course not found ──
   if (!course || course.error) return (
@@ -215,7 +215,9 @@ function EnrollContent() {
 }
 
 // ── Course picker (αν δεν έχει ?course= param) ──
-function CoursePicker({ user }) {
+const normalize = (s) => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() ?? '';
+
+function CoursePicker() {
   const router = useRouter();
   const [courses, setCourses] = useState([]);
   const [institutions, setInstitutions] = useState([]);
@@ -236,7 +238,7 @@ function CoursePicker({ user }) {
 
   const filtered = courses.filter(c => {
     const matchInst = activeInst === 'all' || String(c.institution_id) === String(activeInst);
-    const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search || normalize(c.title).includes(normalize(search)) || normalize(c.short_description).includes(normalize(search));
     return matchInst && matchSearch;
   });
 

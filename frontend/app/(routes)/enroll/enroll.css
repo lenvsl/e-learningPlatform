@@ -313,10 +313,7 @@
   background: #1a1a2e;
   border-right: 1px solid #2d2d44;
   padding: 20px 10px;
-  position: sticky;
-  top: 0;
-  height: calc(100vh - 160px);
-  overflow-y: auto;
+  min-height: 100%;
 }
 
 .enroll-sidebar-label {

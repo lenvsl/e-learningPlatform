@@ -1,18 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import '../../lecturer.css';
 
 export default function LecturerCoursePage() {
   const { id: courseId } = useParams();
-  const router = useRouter();
-
   const [course, setCourse]     = useState(null);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
-  const [saveMsg, setSaveMsg]   = useState(null);
 
   // ── Edit course ──
   const [editing, setEditing]   = useState(false);
@@ -32,16 +29,21 @@ export default function LecturerCoursePage() {
   const [addingLesson, setAddingLesson] = useState(false);
 
   // Upload state per lesson
-  const [uploading, setUploading]   = useState({}); // { lessonId: true/false }
-  const [uploadMsg, setUploadMsg]   = useState({}); // { lessonId: 'success'|'error' }
+  const [uploading, setUploading]     = useState({});
+  const [uploadMsg, setUploadMsg]     = useState({});
   const fileRefs = useRef({});
+
+  // PDF upload state
+  const [uploadingPdf, setUploadingPdf] = useState({});
+  const [pdfMsg, setPdfMsg]             = useState({});
+  const pdfRefs = useRef({});
 
   // ── Quiz state ──
   const [quiz, setQuiz]             = useState(null);  // existing quiz
   const [showQuizPanel, setShowQuizPanel] = useState(false);
   const [quizForm, setQuizForm]     = useState({ title: 'Τελικό Quiz', passing_score: 70 });
   const [questions, setQuestions]   = useState([
-    { question_text: '', options: ['', '', '', ''], correct_answer: '' }
+    { question_text: '', question_type: 'single_choice', options: ['', '', '', ''], correct_answer: '' }
   ]);
   const [savingQuiz, setSavingQuiz] = useState(false);
   const [quizError, setQuizError]   = useState(null);
@@ -70,14 +72,12 @@ export default function LecturerCoursePage() {
       .then(r => r.json())
       .then(data => {
         setCourse(data);
-        // Check if course already has a quiz (via first lesson of last section)
-        const allLessons = (data.sections || []).flatMap(s => s.lessons || []);
-        if (allLessons.length > 0) {
-          const lastLesson = allLessons[allLessons.length - 1];
-          fetch(`http://localhost:5000/api/lessons/${lastLesson.id}/quiz-check`, {
-            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
-          }).then(r => r.ok ? r.json() : null).then(q => { if (q) setQuiz(q); }).catch(() => {});
-        }
+        // Check if course already has a quiz
+        fetch(`http://localhost:5000/api/courses/${courseId}/quiz`, {
+          headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+        }).then(r => r.ok ? r.json() : null)
+          .then(data => { if (data?.quiz) setQuiz(data.quiz); })
+          .catch(() => {});
         setEditForm({
           title: data.title || '',
           short_description: data.short_description || '',
@@ -179,6 +179,33 @@ export default function LecturerCoursePage() {
     } finally { setAddingLesson(false); }
   };
 
+  // ── Upload PDF ──
+  const handleUploadPdf = async (lessonId, file) => {
+    if (!file) return;
+    setUploadingPdf(u => ({ ...u, [lessonId]: true }));
+    setPdfMsg(m => ({ ...m, [lessonId]: null }));
+    const formData = new FormData();
+    formData.append('pdf', file);
+    try {
+      const res = await fetch(`http://localhost:5000/api/lessons/${lessonId}/upload/pdf`, {
+        method: 'POST',
+        headers: headers(),
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPdfMsg(m => ({ ...m, [lessonId]: 'success' }));
+        loadCourse();
+      } else {
+        setPdfMsg(m => ({ ...m, [lessonId]: data.error || 'Σφάλμα' }));
+      }
+    } catch {
+      setPdfMsg(m => ({ ...m, [lessonId]: 'Σφάλμα σύνδεσης' }));
+    } finally {
+      setUploadingPdf(u => ({ ...u, [lessonId]: false }));
+    }
+  };
+
   // ── Upload Video ──
   const handleUpload = async (lessonId, file) => {
     if (!file) return;
@@ -224,8 +251,10 @@ export default function LecturerCoursePage() {
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       if (!q.question_text.trim()) { setQuizError(`Ερώτηση ${i+1}: λείπει το κείμενο`); return; }
-      if (q.options.some(o => !o.trim())) { setQuizError(`Ερώτηση ${i+1}: συμπλήρωσε όλες τις επιλογές`); return; }
-      if (!q.correct_answer) { setQuizError(`Ερώτηση ${i+1}: επέλεξε σωστή απάντηση`); return; }
+      if (q.question_type !== 'text') {
+        if (q.options.some(o => !o.trim())) { setQuizError(`Ερώτηση ${i+1}: συμπλήρωσε όλες τις επιλογές`); return; }
+        if (!q.correct_answer) { setQuizError(`Ερώτηση ${i+1}: επέλεξε σωστή απάντηση`); return; }
+      }
     }
 
     setSavingQuiz(true);
@@ -254,8 +283,9 @@ export default function LecturerCoursePage() {
         headers: { ...headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ questions: questions.map(q => ({
           question_text: q.question_text,
-          options: q.options,
-          correct_answer: q.correct_answer,
+          question_type: q.question_type || 'single_choice',
+          options: q.question_type === 'text' ? [] : q.options,
+          correct_answer: q.question_type === 'text' ? '' : q.correct_answer,
         })) }),
       });
       if (!qRes.ok) { const e = await qRes.json(); setQuizError(e.error); setSavingQuiz(false); return; }
@@ -267,7 +297,7 @@ export default function LecturerCoursePage() {
     finally { setSavingQuiz(false); }
   };
 
-  const addQuestion = () => setQuestions(q => [...q, { question_text: '', options: ['', '', '', ''], correct_answer: '' }]);
+  const addQuestion = () => setQuestions(q => [...q, { question_text: '', question_type: 'single_choice', options: ['', '', '', ''], correct_answer: '' }]);
   const removeQuestion = (i) => setQuestions(q => q.filter((_, idx) => idx !== i));
   const updateQuestion = (i, field, val) => setQuestions(q => q.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
   const updateOption = (qi, oi, val) => setQuestions(q => q.map((item, idx) => idx === qi ? { ...item, options: item.options.map((o, j) => j === oi ? val : o) } : item));
@@ -395,13 +425,13 @@ export default function LecturerCoursePage() {
             <div key={section.id} className="lec-section-block">
               <div className="lec-section-header">
                 <div className="lec-section-title-row">
-                  <span className="lec-section-icon">📂</span>
+                  <span className="lec-section-icon">Τίτλος ενότητας:</span>
                   <h3>{section.title}</h3>
                   {section.is_free && <span className="lec-free-tag">Δωρεάν</span>}
                 </div>
                 <div className="lec-section-actions">
                   <button className="lec-btn-sm" onClick={() => setShowAddLesson(section.id)}>
-                    ＋ Lesson
+                    ＋ Lesson / Μάθημα
                   </button>
                   <button className="lec-btn-sm lec-btn-danger"
                     onClick={() => handleDeleteSection(section.id)}>
@@ -472,6 +502,38 @@ export default function LecturerCoursePage() {
                           )}
                         </div>
                       )}
+
+                      {/* PDF actions */}
+                      {lesson.lesson_type === 'pdf' && (
+                        <div className="lec-video-actions">
+                          {lesson.pdf_path ? (
+                            <a href={lesson.pdf_path} target="_blank" rel="noreferrer"
+                              className="lec-btn-sm">📄 Προβολή PDF</a>
+                          ) : (
+                            <>
+                              <input
+                                type="file"
+                                accept="application/pdf"
+                                ref={el => pdfRefs.current[lesson.id] = el}
+                                style={{ display: 'none' }}
+                                onChange={e => handleUploadPdf(lesson.id, e.target.files[0])}
+                              />
+                              <button
+                                className="lec-btn-sm lec-btn-upload"
+                                onClick={() => pdfRefs.current[lesson.id]?.click()}
+                                disabled={uploadingPdf[lesson.id]}
+                              >
+                                {uploadingPdf[lesson.id]
+                                  ? <><span className="lec-spin" /> Ανέβασμα...</>
+                                  : '⬆ Upload PDF'}
+                              </button>
+                            </>
+                          )}
+                          {pdfMsg[lesson.id] && pdfMsg[lesson.id] !== 'success' && (
+                            <span className="lec-upload-error">{pdfMsg[lesson.id]}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -481,12 +543,15 @@ export default function LecturerCoursePage() {
         )}
       </div>
 
+      {/* ── Ειδοποιήσεις ── */}
+      <NotifSection courseId={courseId} headers={headers} />
+
       {/* ── Τελικό Quiz ── */}
       <div className="lec-quiz-section">
         <div className="lec-sections-header">
           <div>
             <h2>🎯 Τελικό Quiz</h2>
-            <p className="lec-quiz-subtitle">Οι students το λύνουν για να πάρουν πιστοποιητικό</p>
+            <p className="lec-quiz-subtitle">Οι εκπαιδευόμενοι το λύνουν για να πάρουν πιστοποιητικό</p>
           </div>
           {!quiz && !showQuizPanel && (
             <button className="lec-btn-primary" onClick={() => setShowQuizPanel(true)}>
@@ -497,8 +562,17 @@ export default function LecturerCoursePage() {
 
         {quiz ? (
           <div className="lec-quiz-exists">
-            <span>✅ Το quiz υπάρχει ήδη — <strong>{quiz.title}</strong></span>
-            <span className="lec-quiz-pass">Βάση επιτυχίας: {quiz.passing_grade}%</span>
+            <div>
+              <span>✅ Το quiz υπάρχει ήδη - <strong>{quiz.title}</strong></span>
+              <span className="lec-quiz-pass">Βάση επιτυχίας: {quiz.passing_grade}%</span>
+            </div>
+            <button className="lec-btn-danger" onClick={async () => {
+              if (!confirm('Διαγραφή quiz; Θα χαθούν όλες οι ερωτήσεις.')) return;
+              await fetch(`http://localhost:5000/api/quizzes/${quiz.id}`, {
+                method: 'DELETE', headers: headers()
+              });
+              setQuiz(null);
+            }}>🗑 Διαγραφή Quiz</button>
           </div>
         ) : showQuizPanel ? (
           <div className="lec-quiz-panel">
@@ -511,8 +585,14 @@ export default function LecturerCoursePage() {
               </div>
               <div className="lec-field">
                 <label>Βάση επιτυχίας (%)</label>
-                <input type="number" min="1" max="100" value={quizForm.passing_score}
-                  onChange={e => setQuizForm(f => ({ ...f, passing_score: parseInt(e.target.value) }))} />
+                <select value={quizForm.passing_score}
+                  onChange={e => setQuizForm(f => ({ ...f, passing_score: parseInt(e.target.value) }))}>
+                  <option value={50}>50%</option>
+                  <option value={60}>60%</option>
+                  <option value={70}>70%</option>
+                  <option value={80}>80%</option>
+                  <option value={90}>90%</option>
+                </select>
               </div>
             </div>
 
@@ -525,33 +605,93 @@ export default function LecturerCoursePage() {
                     <button className="lec-btn-sm lec-btn-danger" onClick={() => removeQuestion(qi)}>🗑</button>
                   )}
                 </div>
+
+                {/* Τύπος ερώτησης */}
+                <div className="lec-field" style={{marginBottom:'8px'}}>
+                  <select value={q.question_type}
+                    onChange={e => updateQuestion(qi, 'question_type', e.target.value)}>
+                    <option value="single_choice">Μία σωστή απάντηση</option>
+                    <option value="multiple_choice">Πολλές σωστές απαντήσεις</option>
+                    <option value="text">Ελεύθερο κείμενο (χειροκίνητη βαθμολόγηση)</option>
+                  </select>
+                </div>
+
                 <div className="lec-field">
                   <input type="text" placeholder="Κείμενο ερώτησης..."
                     value={q.question_text}
                     onChange={e => updateQuestion(qi, 'question_text', e.target.value)} />
                 </div>
-                <div className="lec-options-grid">
-                  {q.options.map((opt, oi) => (
-                    <div key={oi} className="lec-option-row">
-                      <input
-                        type="radio"
-                        name={`correct_${qi}`}
-                        checked={q.correct_answer === opt && opt !== ''}
-                        onChange={() => opt && updateQuestion(qi, 'correct_answer', opt)}
-                      />
-                      <input
-                        type="text"
-                        placeholder={`Επιλογή ${String.fromCharCode(65 + oi)}`}
-                        value={opt}
-                        onChange={e => {
-                          updateOption(qi, oi, e.target.value);
-                          if (q.correct_answer === opt) updateQuestion(qi, 'correct_answer', e.target.value);
-                        }}
-                      />
+
+                {/* Επιλογές — μόνο για single/multiple_choice */}
+                {q.question_type !== 'text' && (
+                  <>
+                    <div className="lec-options-grid">
+                      {q.options.map((opt, oi) => {
+                        if (q.question_type === 'multiple_choice') {
+                          const correctArr = (() => { try { return JSON.parse(q.correct_answer || '[]'); } catch { return []; } })();
+                          const isChecked = correctArr.includes(opt) && opt !== '';
+                          return (
+                            <div key={oi} className="lec-option-row">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (!opt) return;
+                                  const arr = correctArr.includes(opt)
+                                    ? correctArr.filter(o => o !== opt)
+                                    : [...correctArr, opt];
+                                  updateQuestion(qi, 'correct_answer', JSON.stringify(arr));
+                                }}
+                              />
+                              <input
+                                type="text"
+                                placeholder={`Επιλογή ${String.fromCharCode(65 + oi)}`}
+                                value={opt}
+                                onChange={e => {
+                                  const old = opt;
+                                  updateOption(qi, oi, e.target.value);
+                                  if (correctArr.includes(old)) {
+                                    const arr = correctArr.map(o => o === old ? e.target.value : o);
+                                    updateQuestion(qi, 'correct_answer', JSON.stringify(arr));
+                                  }
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        // single_choice
+                        return (
+                          <div key={oi} className="lec-option-row">
+                            <input
+                              type="radio"
+                              name={`correct_${qi}`}
+                              checked={q.correct_answer === opt && opt !== ''}
+                              onChange={() => opt && updateQuestion(qi, 'correct_answer', opt)}
+                            />
+                            <input
+                              type="text"
+                              placeholder={`Επιλογή ${String.fromCharCode(65 + oi)}`}
+                              value={opt}
+                              onChange={e => {
+                                updateOption(qi, oi, e.target.value);
+                                if (q.correct_answer === opt) updateQuestion(qi, 'correct_answer', e.target.value);
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-                <p className="lec-option-hint">● = σωστή απάντηση</p>
+                    <p className="lec-option-hint">
+                      {q.question_type === 'multiple_choice' ? '☑ = σωστές απαντήσεις (μπορείς να επιλέξεις πολλές)' : '● = σωστή απάντηση'}
+                    </p>
+                  </>
+                )}
+
+                {q.question_type === 'text' && (
+                  <p className="lec-option-hint" style={{color:'#f59e0b'}}>
+                    ✏️ Ο φοιτητής θα γράψει ελεύθερο κείμενο. Βαθμολογείται χειροκίνητα από εσένα.
+                  </p>
+                )}
               </div>
             ))}
 
@@ -626,7 +766,7 @@ export default function LecturerCoursePage() {
                 <select value={newLesson.lesson_type}
                   onChange={e => setNewLesson(l => ({ ...l, lesson_type: e.target.value }))}>
                   <option value="video">▶ Βίντεο</option>
-                  <option value="text">📄 Κείμενο</option>
+                  <option value="pdf">📄 PDF</option>
                 </select>
               </div>
               <label className="lec-checkbox-label">
@@ -645,6 +785,81 @@ export default function LecturerCoursePage() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function NotifSection({ courseId, headers }) {
+  const [msg, setMsg] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+
+  useEffect(() => { loadNotifs(); }, []);
+
+  const loadNotifs = async () => {
+    const data = await fetch(`http://localhost:5000/api/courses/${courseId}/notifications`, {
+      headers: headers()
+    }).then(r => r.json()).catch(() => []);
+    setNotifs(Array.isArray(data) ? data : []);
+  };
+
+  const send = async () => {
+    if (!msg.trim()) return;
+    setSending(true);
+    try {
+      await fetch(`http://localhost:5000/api/courses/${courseId}/notifications`, {
+        method: 'POST',
+        headers: { ...headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg.trim() })
+      });
+      setMsg('');
+      setSent(true);
+      setTimeout(() => setSent(false), 3000);
+      loadNotifs();
+    } finally { setSending(false); }
+  };
+
+  const deleteNotif = async (id) => {
+    await fetch(`http://localhost:5000/api/notifications/${id}`, {
+      method: 'DELETE', headers: headers()
+    });
+    setNotifs(n => n.filter(x => x.id !== id));
+  };
+
+  return (
+    <div className="lec-quiz-section">
+      <div className="lec-sections-header">
+        <div>
+          <h2>Ειδοποιήσεις Εκπαιδευομένων</h2>
+          <p className="lec-quiz-subtitle">Στείλε ειδοποιήσεις σε όλους τους εγγεγραμμένους</p>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
+        <textarea value={msg} onChange={e => setMsg(e.target.value)}
+          placeholder="π.χ. Νέο υλικό ανέβηκε! Δείτε την ενότητα 3."
+          rows={2}
+          style={{flex:1,background:'#1e293b',border:'1px solid #334155',borderRadius:'8px',padding:'10px 12px',color:'#e2e8f0',fontSize:'14px',resize:'vertical'}}
+        />
+        <button className="lec-btn-primary" onClick={send} disabled={sending || !msg.trim()}>
+          {sending ? 'Αποστολή...' : 'Κοινοποίηση Ειδοποίησης'}
+        </button>
+      </div>
+      {sent && <p style={{color:'#34d399',fontSize:'13px',marginTop:'6px'}}>✅ Στάλθηκε!</p>}
+
+      {notifs.length > 0 && (
+        <div style={{marginTop:'16px',display:'flex',flexDirection:'column',gap:'8px'}}>
+          {notifs.map(n => (
+            <div key={n.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#1e293b',border:'1px solid #334155',borderRadius:'8px',padding:'10px 14px',gap:'12px'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{color:'#e2e8f0',fontSize:'13px',margin:0,wordBreak:'break-word',whiteSpace:'pre-wrap'}}>{n.message}</p>
+                <p style={{color:'#475569',fontSize:'11px',margin:'4px 0 0'}}>{new Date(n.created_at).toLocaleDateString('el-GR')}</p>
+              </div>
+              <button className="lec-btn-danger lec-btn-sm" onClick={() => deleteNotif(n.id)}>🗑</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

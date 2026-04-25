@@ -35,6 +35,13 @@ export default function LecturerPage() {
   const [creating, setCreating]   = useState(false);
   const [createError, setCreateError] = useState(null);
 
+  // Pending text gradings
+  const [pendingGradings, setPendingGradings] = useState([]);
+  const [showGrading, setShowGrading]         = useState(false);
+  const [gradingAttempt, setGradingAttempt]   = useState(null); // { attempt, text_questions }
+  const [textGrades, setTextGrades]           = useState({});   // { question_id: 0|1 }
+  const [submittingGrade, setSubmittingGrade] = useState(false);
+
   // Refetch when user navigates back to this page
   useEffect(() => {
     const onFocus = () => loadCourses();
@@ -46,14 +53,12 @@ export default function LecturerPage() {
     const token = sessionStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = JSON.parse(decodeURIComponent(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
       if (payload.role !== 'lecturer' && payload.role !== 'admin') {
         router.push('/dashboard'); return;
       }
       setUser(payload);
     } catch { router.push('/login'); return; }
-
-    const headers = { 'Authorization': `Bearer ${token}` };
 
     loadCourses(token);
   }, []);
@@ -64,22 +69,22 @@ export default function LecturerPage() {
       fetch('http://localhost:5000/api/lecturer/courses', { headers: hdrs }).then(r => r.json()),
       fetch('http://localhost:5000/api/categories').then(r => r.json()).catch(() => []),
       fetch('http://localhost:5000/api/institutions').then(r => r.json()).catch(() => []),
-    ]).then(([c, cats, insts]) => {
+      fetch('http://localhost:5000/api/lecturer/pending-gradings', { headers: hdrs }).then(r => r.json()).catch(() => []),
+    ]).then(([c, cats, insts, gradings]) => {
       setCourses(Array.isArray(c) ? c : []);
       setCategories(Array.isArray(cats) ? cats : []);
       setInstitutions(Array.isArray(insts) ? insts : []);
+      setPendingGradings(Array.isArray(gradings) ? gradings : []);
       setLoading(false);
       checkDriveStatus(tok || sessionStorage.getItem('token'));
     }).catch(() => setLoading(false));
   };
 
-  // Auto-generate slug from title
+  const GR = {'α':'a','β':'b','γ':'g','δ':'d','ε':'e','ζ':'z','η':'i','θ':'th','ι':'i','κ':'k','λ':'l','μ':'m','ν':'n','ξ':'x','ο':'o','π':'p','ρ':'r','σ':'s','ς':'s','τ':'t','υ':'y','φ':'f','χ':'ch','ψ':'ps','ω':'o','ά':'a','έ':'e','ή':'i','ί':'i','ό':'o','ύ':'y','ώ':'o'};
+  const toSlug = (val) => val.toLowerCase().split('').map(c => GR[c]??c).join('')
+    .replace(/\s+/g,'-').replace(/[^\w-]/g,'').replace(/--+/g,'-').replace(/^-|-$/g,'');
   const handleTitleChange = (val) => {
-    const slug = val.toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w-]/g, '')
-      .replace(/--+/g, '-');
-    setForm(f => ({ ...f, title: val, slug }));
+    setForm(f => ({ ...f, title: val, slug: toSlug(val) }));
   };
 
   const handleDelete = async (e, courseId, courseTitle) => {
@@ -122,11 +127,42 @@ export default function LecturerPage() {
           duration_minutes: '', max_students: '' });
         loadCourses();
         router.push(`/lecturer/courses/${data.id}`);
+      } else if (data.error?.includes('slug')) {
+        // Duplicate slug — προσθέτουμε αριθμό αυτόματα
+        const newSlug = `${form.slug}-2`;
+        setForm(f => ({ ...f, slug: newSlug }));
+        setCreateError('Υπάρχει ήδη μάθημα με αυτό το slug. Το slug ενημερώθηκε — δοκίμασε ξανά.');
       } else {
         setCreateError(data.error || 'Σφάλμα δημιουργίας');
       }
     } catch { setCreateError('Σφάλμα σύνδεσης'); }
     finally { setCreating(false); }
+  };
+
+  const openGrading = async (attemptId) => {
+    const tok = sessionStorage.getItem('token');
+    const res = await fetch(`http://localhost:5000/api/quiz-attempts/${attemptId}`, {
+      headers: { 'Authorization': `Bearer ${tok}` }
+    });
+    const data = await res.json();
+    setGradingAttempt(data);
+    setTextGrades({});
+    setShowGrading(true);
+  };
+
+  const submitGrade = async () => {
+    setSubmittingGrade(true);
+    const tok = sessionStorage.getItem('token');
+    try {
+      await fetch(`http://localhost:5000/api/quiz-attempts/${gradingAttempt.attempt.id}/grade`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text_grades: textGrades })
+      });
+      setShowGrading(false);
+      setGradingAttempt(null);
+      loadCourses(tok);
+    } finally { setSubmittingGrade(false); }
   };
 
   if (loading) return (
@@ -146,6 +182,26 @@ export default function LecturerPage() {
           ＋ Νέο Μάθημα
         </button>
       </div>
+
+      {/* Pending gradings notification */}
+      {pendingGradings.length > 0 && (
+        <div className="lec-pending-banner">
+          <span>✍️ Εκκρεμείς βαθμολογήσεις ελεύθερου κειμένου: <strong>{pendingGradings.length}</strong></span>
+          <div className="lec-pending-list">
+            {pendingGradings.map(g => (
+              <div key={g.attempt_id} className="lec-pending-item">
+                <div>
+                  <strong>{g.student_name}</strong> — {g.quiz_title}
+                  <span className="lec-pending-course"> ({g.course_title})</span>
+                </div>
+                <button className="lec-btn-primary lec-btn-sm" onClick={() => openGrading(g.attempt_id)}>
+                  Βαθμολόγηση
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Course list */}
       {courses.length === 0 ? (
@@ -198,9 +254,9 @@ export default function LecturerPage() {
               </div>
 
               <div className="lec-field">
-                <label>Slug *</label>
-                <input type="text" placeholder="python-gia-arxarious"
-                  value={form.slug} onChange={e => setForm(f => ({ ...f, slug: e.target.value }))} />
+                <label>Slug <span style={{fontWeight:'normal',color:'#888',fontSize:'12px'}}>(αυτόματο από τίτλο)</span></label>
+                <input type="text" value={form.slug} readOnly
+                  style={{background:'#1e1e2e',color:'#888',cursor:'not-allowed'}} />
               </div>
 
               <div className="lec-field">
@@ -276,6 +332,54 @@ export default function LecturerPage() {
               <button className="lec-btn-ghost" onClick={() => setShowNew(false)}>Ακύρωση</button>
               <button className="lec-btn-primary" onClick={handleCreate} disabled={creating}>
                 {creating ? 'Δημιουργία...' : 'Δημιουργία Μαθήματος'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grading Modal */}
+      {showGrading && gradingAttempt && (
+        <div className="lec-modal-overlay" onClick={() => setShowGrading(false)}>
+          <div className="lec-modal" onClick={e => e.stopPropagation()}>
+            <div className="lec-modal-header">
+              <h2>✍️ Βαθμολόγηση — {gradingAttempt.attempt.student_name}</h2>
+              <button className="lec-modal-close" onClick={() => setShowGrading(false)}>✕</button>
+            </div>
+            <div className="lec-modal-body">
+              <p style={{marginBottom:'12px', color:'#94a3b8'}}>
+                Αυτόματος βαθμός (multiple/single choice): <strong>{gradingAttempt.attempt.score}%</strong>
+              </p>
+              {gradingAttempt.text_questions.map((q, i) => {
+                const studentAnswer = gradingAttempt.attempt.answers?.[q.id] || '—';
+                return (
+                  <div key={q.id} className="lec-field" style={{marginBottom:'16px'}}>
+                    <label>Ερώτηση {i + 1}: {q.question_text}</label>
+                    <div style={{background:'#1e293b', padding:'8px 12px', borderRadius:'6px', margin:'6px 0', color:'#e2e8f0'}}>
+                      {studentAnswer}
+                    </div>
+                    <div style={{display:'flex', gap:'8px', marginTop:'6px'}}>
+                      <label style={{display:'flex', alignItems:'center', gap:'4px', cursor:'pointer'}}>
+                        <input type="radio" name={`q-${q.id}`}
+                          checked={textGrades[q.id] === 1}
+                          onChange={() => setTextGrades(g => ({ ...g, [q.id]: 1 }))} />
+                        ✅ Σωστό
+                      </label>
+                      <label style={{display:'flex', alignItems:'center', gap:'4px', cursor:'pointer'}}>
+                        <input type="radio" name={`q-${q.id}`}
+                          checked={textGrades[q.id] === 0}
+                          onChange={() => setTextGrades(g => ({ ...g, [q.id]: 0 }))} />
+                        ❌ Λάθος
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="lec-modal-footer">
+              <button className="lec-btn-ghost" onClick={() => setShowGrading(false)}>Ακύρωση</button>
+              <button className="lec-btn-primary" onClick={submitGrade} disabled={submittingGrade}>
+                {submittingGrade ? 'Αποθήκευση...' : 'Οριστικοποίηση Βαθμού'}
               </button>
             </div>
           </div>

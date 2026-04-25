@@ -2,9 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 600px;
+  width: 85%;
   border: 1px solid #2d2d44;
   border-radius: 8px;
-  background: #16213e;  /* Dark chat box */
+  background: #16213e;
   overflow: hidden;
 }
 
@@ -66,6 +67,7 @@
 .message {
   margin-bottom: 15px;
   max-width: 70%;
+  width: fit-content;
   animation: fadeIn 0.3s;
 }
 
@@ -86,6 +88,8 @@
   padding: 10px 15px;
   border-radius: 12px;
   word-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .message.sent .message-content {

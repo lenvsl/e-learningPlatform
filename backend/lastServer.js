@@ -12,6 +12,7 @@ import path from 'path';
 
 // Utilities
 import crypto from "crypto";
+import cron from "node-cron";
 
 // Redis & Realtime
 import { createClient } from 'redis';
@@ -74,6 +75,7 @@ function getRoomName(userId1, userId2) {
 // --------------------
 // Session Middleware
 // --------------------
+
 // Session Middleware (γ.) 
 // session middleware AFTER redisClient is defined (Το "Login που αντέχει")/(Σύνδεση Login με Redis) - ΠΡΟΣΟΧΗ: Αυτό ΠΡΙΝ από τα routes (/api/...)
 app.use(session({
@@ -111,16 +113,13 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
+
 // ====================================
 // SOCKET.IO - PRIVATE MESSAGING
 // ====================================
+
 io.on('connection', (socket) => {
   console.log(`🔌 User connected: ${socket.id}`);
-
-  // Join personal notification room
-  socket.on('join_user_room', ({ userId }) => {
-    socket.join(`user:${userId}`);
-  });
 
   // Join private room
   socket.on('join_private_room', ({ userId, otherUserId }) => {
@@ -175,48 +174,12 @@ io.on('connection', (socket) => {
       // Publish to Redis (for multi-server support)
       const room = getRoomName(senderId, recipientId);
       await redisClient.publish(room, JSON.stringify(fullMessage));
-      // Notification στο personal room του παραλήπτη
-      io.to(`user:${recipientId}`).emit('new_message_notification', { sender_id: senderId });
 
       console.log(`✅ Message saved: ${senderId} → ${recipientId}`);
 
     } catch (err) {
       console.error('❌ Error saving message:', err);
       socket.emit('message_error', 'Failed to send message');
-    }
-  });
-
-  // Join group chat room
-  socket.on('join_group_room', ({ chatId }) => {
-    socket.join(`group:${chatId}`);
-  });
-
-  // Send group message
-  socket.on('send_group_message', async ({ chatId, senderId, content }) => {
-    if (!content?.trim()) return;
-    try {
-      const mem = await pool.query(
-        `SELECT 1 FROM group_chat_members WHERE chat_id=$1 AND user_id=$2`,
-        [chatId, senderId]
-      );
-      if (mem.rows.length === 0) return;
-
-      const result = await pool.query(
-        `INSERT INTO group_chat_messages (chat_id, sender_id, content, sent_at)
-         VALUES ($1, $2, $3, NOW())
-         RETURNING id, chat_id, sender_id, content, sent_at`,
-        [chatId, senderId, content.trim()]
-      );
-      const msg = result.rows[0];
-      const userRes = await pool.query(`SELECT first_name, last_name FROM users WHERE id=$1`, [senderId]);
-      const user = userRes.rows[0];
-      io.to(`group:${chatId}`).emit('new_group_message', {
-        ...msg,
-        first_name: user.first_name,
-        last_name: user.last_name
-      });
-    } catch (err) {
-      console.error('❌ group message error:', err.message);
     }
   });
 
@@ -240,6 +203,12 @@ server.listen(PORT, () => {
   console.log(`🔴 Redis pub/sub active`);
 });
 
+
+// const PORT = process.env.PORT || 5000;
+// server.listen(PORT, () => {
+//   console.log(`🚀 Server running at: http://localhost:${PORT}`);
+// });
+
 //-----------------------------
 //----Google Drive Config -----
 //-----------------------------
@@ -259,6 +228,7 @@ const uploadPDF = multer({
     else cb(new Error('Only PDF files allowed'));
   }
 });
+
 
 console.log("CLIENT_ID:", process.env.GOOGLE_CLIENT_ID);
 console.log("CLIENT_SECRET:", process.env.GOOGLE_CLIENT_SECRET);
@@ -292,9 +262,18 @@ app.get('/api/auth/google/url', authenticateToken, (req, res) => {
   res.json({ auth_url: authUrl });
 });
 
+  // const authUrl = oauth2Client.generateAuthUrl({
+  //   access_type: "offline",   // ΥΠΟΧΡΕΩΤΙΚΟ
+  //   prompt: "consent",        // ΥΠΟΧΡΕΩΤΙΚΟ
+  //   scope: [
+  //     "https://www.googleapis.com/auth/drive.file"
+  //   ],
+  // });
+
 // ============================================
 // STEP 2: Handle OAuth Callback
 // ============================================
+// STEP 2: Handle OAuth Callback
 app.get('/auth/google/callback', async (req, res) => {
   const { code, state } = req.query; // state = user_id
 
@@ -325,7 +304,169 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 });
 
-// Upload video endpoint
+//     res.redirect(`${process.env.FRONTEND_URL}/settings?connected=true`);
+//     res.send("Google auth success");
+//   } catch (err) {
+//     console.error('OAuth error:', err);
+//     res.redirect(`${process.env.FRONTEND_URL}/error?msg=oauth_failed`);
+//   }
+
+//   console.log(tokens);
+// });
+
+// app.get("/auth/google", (req, res) => {
+//   const authUrl = oauth2Client.generateAuthUrl({
+//     access_type: "offline",
+//     prompt: "consent",
+//     scope: [
+//       "https://www.googleapis.com/auth/drive.file"
+//     ],
+//   });
+
+//   res.redirect(authUrl);
+// });
+
+// app.get("/auth/google/callback", async (req, res) => {
+  
+//   const { code } = req.query;
+// console.log("CODE:", code);
+//   const { tokens } = await oauth2Client.getToken(code);
+
+//   console.log("TOKENS:", tokens);
+
+//   await pool.query(
+//     `UPDATE users
+//      SET google_access_token = $1,
+//          google_refresh_token = $2
+//      WHERE id = $3`,
+//     [
+//       tokens.access_token,
+//       tokens.refresh_token,
+//       /* βάλε το σωστό user id εδώ */
+//     ]
+//   );
+
+//   res.send("Drive connected successfully!");
+// });
+
+// ============================================
+// STEP 3: Upload Video (using user's token!)            *DOYLEYEI POSTMAN*
+// ============================================
+// app.post('/api/lessons/:lessonId/upload-video',    
+//   authenticateToken,
+//   upload.single('video'),
+//   async (req, res) => {
+//     const { lessonId } = req.params;
+
+//     if (req.user.role !== 'lecturer' && req.user.role !== 'admin') {
+//       return res.status(403).json({ error: 'Forbidden' });
+//     }
+
+//     if (!req.file) {
+//       return res.status(400).json({ error: 'No file' });
+//     }
+
+//     try {
+//       // Get user's tokens from DB
+//       const userTokens = await pool.query(
+//         `SELECT google_access_token, google_refresh_token 
+//          FROM users WHERE id = $1`,
+//         [req.user.id]
+//       );
+
+//       if (!userTokens.rows[0]?.google_access_token) {
+//         return res.status(401).json({ 
+//           error: 'Google Drive not connected',
+//           action: 'connect_drive'
+//         });
+//       }
+
+//       // Set user's tokens
+//       oauth2Client.setCredentials({
+//         access_token: userTokens.rows[0].google_access_token,
+//         refresh_token: userTokens.rows[0].google_refresh_token
+//       });
+
+//             // ✅ AUTO-REFRESH: Listen for token refresh
+//       oauth2Client.on('tokens', async (tokens) => {
+//         console.log('🔄 Refreshing tokens...');
+        
+//         if (tokens.refresh_token) {
+//           // Google sometimes returns a new refresh token
+//           await pool.query(
+//             'UPDATE users SET google_refresh_token = $1 WHERE id = $2',
+//             [tokens.refresh_token, req.user.id]
+//           );
+//         }
+        
+//         // Always update access token
+//         await pool.query(
+//           'UPDATE users SET google_access_token = $1 WHERE id = $2',
+//           [tokens.access_token, req.user.id]
+//         );
+        
+//         console.log('✅ Tokens refreshed and saved');
+//       });
+
+//       const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+//       // Upload to LECTURER'S Drive
+//       const { data } = await drive.files.create({
+//         requestBody: {
+//           name: `lesson_${lessonId}_${Date.now()}.mp4`,
+//           mimeType: req.file.mimetype,
+//           parents: [process.env.FOLDER_ID]
+//         },
+//         media: {
+//           mimeType: req.file.mimetype,
+//           body: fs.createReadStream(req.file.path)
+//         },
+//         fields: 'id, webViewLink'
+//       });
+
+//       // Make public
+//       await drive.permissions.create({
+//         fileId: data.id,
+//         requestBody: { role: 'reader', type: 'anyone' }
+//       });
+
+//       const videoUrl = `https://drive.google.com/file/d/${data.id}/view`;
+
+//       // Save to DB
+//       await pool.query(
+//         `UPDATE lessons 
+//          SET video_url = $1, drive_file_id = $2, 
+//              video_filename = $3, video_size = $4
+//          WHERE id = $5`,
+//         [videoUrl, data.id, req.file.originalname, req.file.size, lessonId]
+//       );
+
+//       // Cleanup temp file
+//       await unlink(req.file.path);
+
+//       res.json({ 
+//         message: 'Video uploaded',
+//         video_url: videoUrl
+//       });
+
+//     } catch (err) {
+//       console.error('Upload error:', err);
+      
+//       // Token expired? Ask to reconnect
+//       if (err.code === 401) {
+//         return res.status(401).json({ 
+//           error: 'Google token expired',
+//           action: 'reconnect_drive'
+//         });
+//       }
+
+//       res.status(500).json({ error: 'Upload failed' });
+//     }
+//   }
+// );
+
+
+// Upload vidoe endpoint
 app.post('/api/lessons/:lessonId/upload-video',
   authenticateToken,
   upload.single('video'),
@@ -781,7 +922,7 @@ app.delete("/api/institutions/:id", authenticateToken, async (req, res) => {
 
 // 1. GET ALL COURSES (με φίλτρα)           *DOYLEYEI POSTMAN*
 app.get("/api/courses", async (req, res) => {
-  const { category_id, institution_id, difficulty, status, search } = req.query;
+  const { category_id, institution_id, difficulty, status } = req.query;
   
   try {
     let query = `
@@ -832,17 +973,7 @@ app.get("/api/courses", async (req, res) => {
       // Default: μόνο published courses
       query += ` AND c.status = 'published'`;
     }
-
-    if (search) {
-      query += ` AND (
-        unaccent(c.title) ILIKE unaccent($${paramCount}) OR
-        unaccent(c.short_description) ILIKE unaccent($${paramCount}) OR
-        unaccent(u.first_name || ' ' || u.last_name) ILIKE unaccent($${paramCount})
-      )`;
-      params.push(`%${search}%`);
-      paramCount++;
-    }
-
+    
     query += ` ORDER BY c.created_at DESC`;
     
     const result = await pool.query(query, params);
@@ -1374,6 +1505,7 @@ app.delete("/api/lessons/:id", authenticateToken, async (req, res) => {
 // PROGRESS TRACKING 
 // ========================================
 
+
 // 1. MARK LESSON AS COMPLETED                     *doyleyei POSTMAN*
 app.post("/api/lessons/:lessonId/complete", authenticateToken, async (req, res) => {
   const { lessonId } = req.params;
@@ -1401,8 +1533,8 @@ app.post("/api/lessons/:lessonId/complete", authenticateToken, async (req, res) 
     // 2. Έλεγχος: Είναι εγγεγραμμένος στο course;
     const enrollmentCheck = await pool.query(
       `SELECT id FROM course_enrollments
-       WHERE student_id = $1 AND course_id = $2
-       AND status IN ('active', 'completed') AND NOT is_deleted`,
+       WHERE student_id = $1 AND course_id = $2 
+       AND status = 'active' AND NOT is_deleted`,
       [req.user.id, lesson.course_id]
     );
 
@@ -1543,41 +1675,40 @@ app.get("/api/courses/:courseId/my-progress", authenticateToken, async (req, res
 
     const enrollmentData = enrollment.rows[0];
 
-    const enrollmentId = enrollmentData.id;
-
     // 2. Sections με progress
     const sections = await pool.query(
-      `SELECT
+      `SELECT 
          cs.id,
          cs.title,
          cs.order_index,
          COUNT(l.id) as total_lessons,
-         COUNT(lc.id) as completed_lessons
+         COUNT(lc.id) FILTER (WHERE lc.enrollment_id = $1) as completed_lessons
        FROM course_sections cs
        LEFT JOIN lessons l ON l.section_id = cs.id AND NOT l.is_deleted
        LEFT JOIN lesson_completions lc ON lc.lesson_id = l.id AND lc.enrollment_id = $1
        WHERE cs.course_id = $2 AND NOT cs.is_deleted
        GROUP BY cs.id
        ORDER BY cs.order_index ASC`,
-      [enrollmentId, courseId]
+      [req.user.id, courseId]
     );
 
     // 3. Για κάθε section, πάρε τα lessons με completion status
     for (let section of sections.rows) {
       const lessons = await pool.query(
-        `SELECT
+        `SELECT 
            l.id,
            l.title,
            l.lesson_type,
            l.order_index,
            l.video_duration,
-           lc.completed_at IS NOT NULL as is_completed
+           COALESCE(lc.completed_at) as is_completed,
+           lc.completed_at
          FROM lessons l
-         LEFT JOIN lesson_completions lc
+         LEFT JOIN lesson_completions lc 
            ON lc.lesson_id = l.id AND lc.enrollment_id = $1
          WHERE l.section_id = $2 AND NOT l.is_deleted
          ORDER BY l.order_index ASC`,
-        [enrollmentId, section.id]
+        [req.user.id, section.id]
       );
 
       section.lessons = lessons.rows;
@@ -1778,8 +1909,8 @@ app.post("/api/courses/:courseId/enroll", authenticateToken, async (req, res) =>
   try {
     // 1. Έλεγχος: Υπάρχει το course;
     const courseCheck = await pool.query(
-      `SELECT id, title, price, status, max_students, lecturer_id
-       FROM courses
+      `SELECT id, title, price, status, max_students
+       FROM courses 
        WHERE id = $1 AND NOT is_deleted AND status = 'published'`,
       [courseId]
     );
@@ -1817,61 +1948,21 @@ app.post("/api/courses/:courseId/enroll", authenticateToken, async (req, res) =>
       }
     }
 
-    // 4. Δημιουργία εγγραφής (ή επανενεργοποίηση αν υπήρχε παλιά)
-    const existing = await pool.query(
-      `SELECT id FROM course_enrollments
-       WHERE student_id = $1 AND course_id = $2 AND is_deleted = TRUE`,
+    // 4. Δημιουργία εγγραφής
+    const enrollment = await pool.query(
+      `INSERT INTO course_enrollments (student_id, course_id, status, enrolled_at)
+       VALUES ($1, $2, 'active', NOW())
+       RETURNING id, student_id, course_id, status, enrolled_at, progress_percentage`,
       [req.user.id, courseId]
-    );
-
-    let enrollment;
-    if (existing.rows.length > 0) {
-      const oldId = existing.rows[0].id;
-      // Καθαρισμός παλιών δεδομένων (το πιστοποιητικό διατηρείται)
-      await pool.query(`DELETE FROM lesson_completions WHERE enrollment_id = $1`, [oldId]);
-      await pool.query(`DELETE FROM quiz_attempts WHERE enrollment_id = $1`, [oldId]);
-      // Επανενεργοποίηση
-      enrollment = await pool.query(
-        `UPDATE course_enrollments
-         SET is_deleted = FALSE, deleted_at = NULL, status = 'active',
-             enrolled_at = NOW(), progress_percentage = 0,
-             final_grade = NULL, completed_at = NULL, certificate_issued = FALSE, certificate_path = NULL
-         WHERE id = $1
-         RETURNING id, student_id, course_id, status, enrolled_at, progress_percentage`,
-        [oldId]
-      );
-    } else {
-      enrollment = await pool.query(
-        `INSERT INTO course_enrollments (student_id, course_id, status, enrolled_at)
-         VALUES ($1, $2, 'active', NOW())
-         RETURNING id, student_id, course_id, status, enrolled_at, progress_percentage`,
-        [req.user.id, courseId]
-      );
-    }
-
-    // 5. Auto-add στο group chat του course
-    const gc = await pool.query(
-      `INSERT INTO group_chats (course_id, title)
-       VALUES ($1, $2)
-       ON CONFLICT (course_id) DO UPDATE SET course_id = EXCLUDED.course_id
-       RETURNING id`,
-      [courseId, course.title]
-    );
-    await pool.query(
-      `INSERT INTO group_chat_members (chat_id, user_id, last_read_at)
-       VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING`,
-      [gc.rows[0].id, req.user.id]
-    );
-    await pool.query(
-      `INSERT INTO group_chat_members (chat_id, user_id, last_read_at)
-       VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING`,
-      [gc.rows[0].id, course.lecturer_id]
     );
 
     res.status(201).json({
       message: "Successfully enrolled in course",
       enrollment: enrollment.rows[0],
-      course: { id: course.id, title: course.title }
+      course: {
+        id: course.id,
+        title: course.title
+      }
     });
 
   } catch (err) {
@@ -1888,10 +1979,11 @@ app.get("/api/my-enrollments", authenticateToken, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT
+      `SELECT 
          ce.id as enrollment_id,
          ce.status,
          ce.enrolled_at,
+         ce.progress_percentage,
          ce.final_grade,
          c.id as course_id,
          c.title,
@@ -1899,13 +1991,10 @@ app.get("/api/my-enrollments", authenticateToken, async (req, res) => {
          c.short_description,
          c.difficulty,
          u.first_name || ' ' || u.last_name AS lecturer_name,
-         (SELECT COUNT(*) FROM lessons l
-          JOIN course_sections cs ON l.section_id = cs.id
-          WHERE cs.course_id = c.id AND NOT l.is_deleted) as lesson_count,
-         (SELECT COUNT(*) FROM lesson_completions lc
-          JOIN lessons l ON l.id = lc.lesson_id
-          JOIN course_sections cs ON cs.id = l.section_id
-          WHERE cs.course_id = c.id AND lc.enrollment_id = ce.id) as completed_lessons
+         (SELECT COUNT(*) FROM course_sections WHERE course_id = c.id AND NOT is_deleted) as section_count,
+         (SELECT COUNT(*) FROM lessons l 
+          JOIN course_sections cs ON l.section_id = cs.id 
+          WHERE cs.course_id = c.id AND NOT l.is_deleted) as lesson_count
        FROM course_enrollments ce
        JOIN courses c ON c.id = ce.course_id
        JOIN users u ON u.id = c.lecturer_id
@@ -1914,14 +2003,7 @@ app.get("/api/my-enrollments", authenticateToken, async (req, res) => {
       [req.user.id]
     );
 
-    const rows = result.rows.map(r => ({
-      ...r,
-      progress_percentage: r.lesson_count > 0
-        ? Math.round((r.completed_lessons / r.lesson_count) * 100)
-        : 0
-    }));
-
-    res.json(rows);
+    res.json(result.rows);
   } catch (err) {
     console.error("❌ Error fetching enrollments:", err.message);
     res.status(500).json({ error: "Database error" });
@@ -2104,6 +2186,10 @@ app.get("/api/courses/:courseId/check-enrollment", authenticateToken, async (req
 // QUIZZES & CERTIFICATES - ΑΠΛΟ & ΛΕΙΤΟΥΡΓΙΚΟ
 // ========================================
 
+// -----------------------------------------------
+// QUIZZES
+// -----------------------------------------------
+
 // 1. LECTURER: Create Quiz για lesson              *DOYLEYEI POSTMAN*
 app.post("/api/lessons/:lessonId/quiz", authenticateToken, async (req, res) => {
   const { lessonId } = req.params;
@@ -2186,20 +2272,6 @@ let startIndex = maxOrderResult.rows[0].max_order + 1;
   }
 });
 
-// DELETE Quiz (lecturer/admin)
-app.delete("/api/quizzes/:quizId", authenticateToken, async (req, res) => {
-  if (req.user.role !== "lecturer" && req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  try {
-    await pool.query(`DELETE FROM quiz_questions WHERE quiz_id = $1`, [req.params.quizId]);
-    await pool.query(`DELETE FROM quizzes WHERE id = $1`, [req.params.quizId]);
-    res.json({ message: "Quiz deleted" });
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
 // 3. STUDENT: Get Quiz (χωρίς τις σωστές απαντήσεις)        *DOYLEYEI POSTMAN*
 app.get("/api/quizzes/:quizId", authenticateToken, async (req, res) => {
   const { quizId } = req.params;
@@ -2208,10 +2280,9 @@ app.get("/api/quizzes/:quizId", authenticateToken, async (req, res) => {
     // Quiz info
     const quiz = await pool.query(
       `SELECT q.id, q.title, q.description, q.passing_grade, q.lesson_id,
-              l.title as lesson_title, cs.course_id
+              l.title as lesson_title
        FROM quizzes q
        JOIN lessons l ON l.id = q.lesson_id
-       JOIN course_sections cs ON cs.id = l.section_id
        WHERE q.id = $1`,
       [quizId]
     );
@@ -2241,32 +2312,14 @@ app.get("/api/quizzes/:quizId", authenticateToken, async (req, res) => {
 
     // Έλεγχος αν ο student έχει ήδη περάσει αυτό το quiz
     if (req.user.role === 'student') {
-      // Αν υπάρχει πιστοποιητικό για το course → μπλοκάρισμα
-      const certCheck = await pool.query(
-        `SELECT cert.id FROM certificates cert
-         JOIN course_enrollments ce ON ce.id = cert.enrollment_id
-         JOIN course_sections cs ON cs.course_id = ce.course_id
-         JOIN lessons l ON l.section_id = cs.id
-         JOIN quizzes q ON q.lesson_id = l.id
-         WHERE q.id = $1 AND ce.student_id = $2`,
+      const passed = await pool.query(
+        `SELECT qa.id FROM quiz_attempts qa
+         JOIN course_enrollments ce ON ce.id = qa.enrollment_id
+         WHERE qa.quiz_id = $1 AND ce.student_id = $2 AND qa.score >= 70
+         LIMIT 1`,
         [quizId, req.user.id]
       );
-
-      if (certCheck.rows.length > 0) {
-        quizData.already_passed = true;
-      } else {
-        const attemptCheck = await pool.query(
-          `SELECT qa.id, qa.score, qa.needs_grading FROM quiz_attempts qa
-           JOIN course_enrollments ce ON ce.id = qa.enrollment_id
-           WHERE qa.quiz_id = $1 AND ce.student_id = $2
-           ORDER BY qa.submitted_at DESC LIMIT 1`,
-          [quizId, req.user.id]
-        );
-        const lastAttempt = attemptCheck.rows[0];
-        quizData.already_passed  = !!lastAttempt && lastAttempt.score >= 70 && !lastAttempt.needs_grading;
-        quizData.pending_grading = !!lastAttempt?.needs_grading;
-        quizData.last_score      = (!lastAttempt?.needs_grading && lastAttempt?.score < 70) ? lastAttempt.score : null;
-      }
+      quizData.already_passed = passed.rows.length > 0;
     }
 
     res.json(quizData);
@@ -2340,8 +2393,8 @@ app.post("/api/quizzes/:quizId/submit", authenticateToken, async (req, res) => {
         autoGradable++;
         if (qType === 'multiple_choice') {
           try {
-            const correctArr = [...new Set(JSON.parse(q.correct_answer || '[]'))].sort();
-            const studentArr = [...new Set(JSON.parse(answers[q.id] || '[]'))].sort();
+            const correctArr = JSON.parse(q.correct_answer || '[]').sort();
+            const studentArr = JSON.parse(answers[q.id] || '[]').sort();
             if (JSON.stringify(correctArr) === JSON.stringify(studentArr)) correct++;
           } catch { /* ignore */ }
         } else {
@@ -2384,26 +2437,12 @@ const enrollmentId = enrollmentRes.rows[0].id;
 
 
     // 4. Αποθήκευση attempt
-    const attemptCountRes = await pool.query(
-      `SELECT COUNT(*) FROM quiz_attempts WHERE enrollment_id = $1 AND quiz_id = $2`,
-      [enrollmentId, quizId]
-    );
-    const attemptNumber = parseInt(attemptCountRes.rows[0].count) + 1;
-    const totalQuestions = questions.rows.length;
-
     const attempt = await pool.query(
       `INSERT INTO quiz_attempts
-       (enrollment_id, quiz_id, attempt_number, score, max_possible_score, percentage,
-        passed, started_at, submitted_at, answers, needs_grading)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9)
+       (enrollment_id, quiz_id, score, started_at, submitted_at, answers, needs_grading)
+       VALUES ($1, $2, $3, NOW(), NOW(), $4, $5)
        RETURNING id, enrollment_id, quiz_id, score, submitted_at, needs_grading`,
-      [
-        enrollmentId, quizId, attemptNumber,
-        score, totalQuestions,
-        autoGradable > 0 ? Math.round((correct / autoGradable) * 100) : 0,
-        score >= passing_score && !needsGrading,
-        JSON.stringify(answers), needsGrading
-      ]
+      [enrollmentId, quizId, score, JSON.stringify(answers), needsGrading]
     );
 
     // 5. Update final_grade στο enrollment (αν είναι ο τελικός βαθμός)
@@ -2493,238 +2532,6 @@ app.get("/api/my-quiz-attempts", authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Error fetching attempts:", err.message);
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// 6. LECTURER: Pending text-answer gradings
-app.get("/api/lecturer/pending-gradings", authenticateToken, async (req, res) => {
-  if (req.user.role !== "lecturer" && req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  try {
-    const result = await pool.query(
-      `SELECT
-         qa.id AS attempt_id,
-         qa.score AS auto_score,
-         qa.submitted_at,
-         qa.answers,
-         u.first_name || ' ' || u.last_name AS student_name,
-         u.email AS student_email,
-         q.title AS quiz_title,
-         c.title AS course_title,
-         c.id AS course_id
-       FROM quiz_attempts qa
-       JOIN course_enrollments ce ON ce.id = qa.enrollment_id
-       JOIN users u ON u.id = ce.student_id
-       JOIN quizzes q ON q.id = qa.quiz_id
-       JOIN lessons l ON l.id = q.lesson_id
-       JOIN course_sections cs ON cs.id = l.section_id
-       JOIN courses c ON c.id = cs.course_id
-       WHERE c.lecturer_id = $1
-         AND qa.needs_grading = true
-         AND (qa.text_grades IS NULL)
-       ORDER BY qa.submitted_at ASC`,
-      [req.user.id]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// 7. LECTURER: Get attempt details (questions + student answers)
-app.get("/api/quiz-attempts/:attemptId", authenticateToken, async (req, res) => {
-  if (req.user.role !== "lecturer" && req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  try {
-    const attempt = await pool.query(
-      `SELECT qa.*, u.first_name || ' ' || u.last_name AS student_name
-       FROM quiz_attempts qa
-       JOIN course_enrollments ce ON ce.id = qa.enrollment_id
-       JOIN users u ON u.id = ce.student_id
-       WHERE qa.id = $1`,
-      [req.params.attemptId]
-    );
-    if (!attempt.rows[0]) return res.status(404).json({ error: "Not found" });
-
-    const questions = await pool.query(
-      `SELECT id, question_text, question_type, options, correct_answer
-       FROM quiz_questions WHERE quiz_id = $1 AND question_type = 'text'
-       ORDER BY order_index`,
-      [attempt.rows[0].quiz_id]
-    );
-
-    res.json({ attempt: attempt.rows[0], text_questions: questions.rows });
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// 8. LECTURER: Submit text grades → finalize score + certificate
-app.post("/api/quiz-attempts/:attemptId/grade", authenticateToken, async (req, res) => {
-  if (req.user.role !== "lecturer" && req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  const { text_grades } = req.body; // { question_id: 1 or 0 }
-  try {
-    const attemptRes = await pool.query(
-      `SELECT qa.*, ce.student_id, ce.course_id
-       FROM quiz_attempts qa
-       JOIN course_enrollments ce ON ce.id = qa.enrollment_id
-       WHERE qa.id = $1`,
-      [req.params.attemptId]
-    );
-    if (!attemptRes.rows[0]) return res.status(404).json({ error: "Not found" });
-    const attempt = attemptRes.rows[0];
-
-    // Όλες οι ερωτήσεις για να υπολογίσουμε το τελικό score
-    const questionsRes = await pool.query(
-      `SELECT id, question_type, correct_answer FROM quiz_questions WHERE quiz_id = $1`,
-      [attempt.quiz_id]
-    );
-    const questions = questionsRes.rows;
-    const answers = attempt.answers || {};
-
-    let correct = 0;
-    questions.forEach(q => {
-      if (q.question_type === 'text') {
-        correct += (text_grades[q.id] === 1 || text_grades[q.id] === true) ? 1 : 0;
-      } else if (q.question_type === 'multiple_choice') {
-        try {
-          const raw = answers[q.id];
-          const studentArr = [...new Set(Array.isArray(raw) ? raw : JSON.parse(raw || '[]'))].sort();
-          const correctArr = [...new Set(Array.isArray(q.correct_answer) ? q.correct_answer : JSON.parse(q.correct_answer || '[]'))].sort();
-          if (JSON.stringify(studentArr) === JSON.stringify(correctArr)) correct++;
-        } catch { /* ignore */ }
-      } else {
-        if (String(answers[q.id]) === String(q.correct_answer)) correct++;
-      }
-    });
-
-    const finalScore = Math.round((correct / questions.length) * 100);
-    const passed = finalScore >= 70;
-
-    // Update attempt
-    await pool.query(
-      `UPDATE quiz_attempts SET score = $1, text_grades = $2, needs_grading = false WHERE id = $3`,
-      [finalScore, JSON.stringify(text_grades), attempt.id]
-    );
-
-    // Update enrollment final_grade
-    const enrollment = await pool.query(
-      `UPDATE course_enrollments SET final_grade = $1, updated_at = NOW()
-       WHERE id = $2 RETURNING id`,
-      [finalScore, attempt.enrollment_id]
-    );
-
-    // Έκδοση πιστοποιητικού αν πέρασε
-    let certificate = null;
-    if (passed) {
-      const certResult = await pool.query(
-        `INSERT INTO certificates (enrollment_id, issued_at, certificate_path)
-         VALUES ($1, NOW(), $2)
-         ON CONFLICT (enrollment_id) DO NOTHING
-         RETURNING id`,
-        [attempt.enrollment_id, `/certificates/${attempt.enrollment_id}.pdf`]
-      );
-      if (certResult.rows.length > 0) {
-        await pool.query(
-          `UPDATE course_enrollments
-           SET certificate_issued = true, completed_at = NOW(), status = 'completed'
-           WHERE id = $1`,
-          [attempt.enrollment_id]
-        );
-        certificate = certResult.rows[0];
-      }
-    }
-
-    res.json({ final_score: finalScore, passed, certificate });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// -----------------------------------------------
-// NOTIFICATIONS
-// -----------------------------------------------
-
-// Lecturer: στείλε ειδοποίηση σε όλους τους εγγεγραμμένους
-app.post("/api/courses/:courseId/notifications", authenticateToken, async (req, res) => {
-  if (req.user.role !== "lecturer" && req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  const { message } = req.body;
-  if (!message?.trim()) return res.status(400).json({ error: "Το μήνυμα είναι κενό" });
-
-  try {
-    const notif = await pool.query(
-      `INSERT INTO notifications (course_id, message) VALUES ($1, $2) RETURNING id`,
-      [req.params.courseId, message.trim()]
-    );
-    res.json({ message: "Η ειδοποίηση στάλθηκε!", id: notif.rows[0].id });
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// Lecturer: διάγραψε ειδοποίηση
-app.delete("/api/notifications/:id", authenticateToken, async (req, res) => {
-  if (req.user.role !== "lecturer" && req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  try {
-    await pool.query(`DELETE FROM notifications WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// Lecturer: λίστα ειδοποιήσεων για course
-app.get("/api/courses/:courseId/notifications", authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, message, created_at FROM notifications WHERE course_id = $1 ORDER BY created_at DESC`,
-      [req.params.courseId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// Student: πάρε τις ειδοποιήσεις μου
-app.get("/api/my-notifications", authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT n.id, n.message, n.created_at, c.title AS course_title,
-              (nr.student_id IS NOT NULL) AS is_read
-       FROM notifications n
-       JOIN courses c ON c.id = n.course_id
-       JOIN course_enrollments ce ON ce.course_id = n.course_id AND ce.student_id = $1
-       LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
-       ORDER BY n.created_at DESC`,
-      [req.user.id]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// Student: διάβασε ειδοποίηση
-app.post("/api/notifications/:id/read", authenticateToken, async (req, res) => {
-  try {
-    await pool.query(
-      `INSERT INTO notification_reads (notification_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [req.params.id, req.user.id]
-    );
-    res.json({ ok: true });
-  } catch (err) {
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -2884,10 +2691,77 @@ app.get("/api/courses/:courseId/certificates", authenticateToken, async (req, re
   }
 });
 
+//__________________________21/2/26________________________________
+// //--------------------------------------
+// // -------------- Video ----------------
+// //--------------------------------------
+// //----------- Upload Routes ------------
+// //--------------------------------------
+
+// // Upload video για ένα lesson
+// app.post("/api/lessons/:lessonId/upload-video", 
+//   authenticateToken,
+//   upload.single('video'),
+//   async (req, res) => {
+    
+//     // 1. Role check
+//     if (req.user.role !== "lecturer" && req.user.role !== "admin") {
+//       return res.status(403).json({ error: "Forbidden" });
+//     }
+
+//     if (!req.file) {
+//       return res.status(400).json({ error: "No file" });
+//     }
+
+//     try {
+//       // 2. Upload to Drive
+//       const { data } = await drive.files.create({
+//         resource: {
+//           name: `lesson_${req.params.lessonId}_${Date.now()}.mp4`,
+//           parents: [process.env.GOOGLE_DRIVE_FOLDER_ID]
+//         },
+//         media: {
+//           mimeType: req.file.mimetype,
+//           body: fs.createReadStream(req.file.path)
+//         },
+//         fields: 'id'
+//       });
+
+//       // 3. Make public
+//       await drive.permissions.create({
+//         fileId: data.id,
+//         requestBody: { role: 'reader', type: 'anyone' }
+//       });
+
+//       // 4. Save to DB
+//       const videoUrl = `https://drive.google.com/file/d/${data.id}/view`;
+      
+//       await pool.query(
+//         `UPDATE lessons 
+//          SET video_url = $1, drive_file_id = $2, 
+//              video_filename = $3, video_size = $4
+//          WHERE id = $5`,
+//         [videoUrl, data.id, req.file.originalname, req.file.size, req.params.lessonId]
+//       );
+
+//       // 5. Cleanup
+//       await unlink(req.file.path);
+
+//       res.json({ 
+//         message: "Video uploaded",
+//         video_url: videoUrl 
+//       });
+
+//     } catch (err) {
+//       console.error(err);
+//       res.status(500).json({ error: "Upload failed" });
+//     }
+//   }
+// );
+
 //--------------------------------------------------------
 //-- Get Video Link - Get Video (with enrollment check) --
 //--------------------------------------------------------
-
 // Πάρε το video URL για ένα lesson
 app.get("/api/lessons/:lessonId/video", authenticateToken, async (req, res) => {
   try {
@@ -2925,6 +2799,141 @@ app.get("/api/lessons/:lessonId/video", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Error" });
   }
 });
+
+// //---------deletevideo----------
+// // Διαγραφή video από Google Drive
+// app.delete("/api/lessons/:lessonId/video", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "lecturer" && req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Forbidden" });
+//   }
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT drive_file_id FROM lessons WHERE id = $1`,
+//       [req.params.lessonId]
+//     );
+
+//     if (result.rows[0]?.drive_file_id) {
+//       await drive.files.delete({ fileId: result.rows[0].drive_file_id });
+//     }
+
+//     await pool.query(
+//       `UPDATE lessons 
+//        SET video_url = NULL, drive_file_id = NULL, 
+//            video_filename = NULL, video_size = NULL
+//        WHERE id = $1`,
+//       [req.params.lessonId]
+//     );
+
+//     res.json({ message: "Video deleted" });
+
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: "Delete failed" });
+//   }
+// });
+
+//__________________________14/2/26________________________________
+
+
+
+
+//----------------------------------------------------------------------------------------------------------------------
+
+// // Admin/Lecturer - list enrollments for a course
+// // O admin ή o lecturer βλεπουν τις εγγραφές
+// app.get("/api/course-enrollments/:courseId", authenticateToken, async (req, res) => {
+//   const { courseId } = req.params;
+
+//   // Μόνο admin και lecturer επιτρέπεται να δουν τις εγγραφές
+//   if (req.user.role !== "admin" && req.user.role !== "lecturer") {
+//     return res.status(403).json({ error: "Forbidden" });
+//   }
+
+//   try {
+//     // Παίρνουμε τις εγγραφές του συγκεκριμένου course μαζί με τα στοιχεία του course
+//     const result = await pool.query(
+//       `SELECT ce.id, ce.student_id, u.first_name, u.last_name, u.email, ce.status, ce.enrolled_at,
+//               c.id AS course_id, c.title AS course_title, c.slug AS course_slug
+//        FROM course_enrollments ce
+//        JOIN users u ON ce.student_id = u.id
+//        JOIN courses c ON ce.course_id = c.id
+//        WHERE ce.course_id = $1 AND ce.is_deleted = FALSE`,
+//       [courseId]
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching course enrollments:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Ο μαθητής εγγράφεται σε course
+// // Enroll student in a course
+// app.post("/api/enroll/:courseId", authenticateToken, async (req, res) => {
+//   const { courseId } = req.params;
+
+//   if (req.user.role !== "student") {
+//     return res.status(403).json({ error: "Only students can enroll in courses" });
+//   }
+
+//   try {
+//     // Check if course exists
+//     const course = await pool.query(
+//       `SELECT id, price FROM courses WHERE id = $1 AND NOT is_deleted AND status = 'published'`,
+//       [courseId]
+//     );
+//     if (course.rows.length === 0) {
+//       return res.status(404).json({ error: "Course not found" });
+//     }
+
+//     // Check if already enrolled
+//     const existing = await pool.query(
+//       `SELECT id FROM course_enrollments WHERE student_id = $1 AND course_id = $2 AND NOT is_deleted`,
+//       [req.user.id, courseId]
+//     );
+//     if (existing.rows.length > 0) {
+//       return res.status(400).json({ error: "Already enrolled" });
+//     }
+
+//     // Create enrollment
+//     const result = await pool.query(
+//       `INSERT INTO course_enrollments (student_id, course_id, status) 
+//        VALUES ($1, $2, 'active') 
+//        RETURNING id, student_id, course_id, status, enrolled_at`,
+//       [req.user.id, courseId]
+//     );
+
+//     res.status(201).json(result.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error enrolling:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Δες όλα τα courses που έχεις εγγραφεί
+// // Get all enrolled courses for logged-in student
+// app.get("/api/my-enrollments", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "student") {
+//     return res.status(403).json({ error: "Only students can view enrollments" });
+//   }
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT c.id, c.title, c.short_description, ce.status, ce.enrolled_at
+//        FROM course_enrollments ce
+//        JOIN courses c ON c.id = ce.course_id
+//        WHERE ce.student_id = $1 AND NOT ce.is_deleted`,
+//       [req.user.id]
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching enrollments:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
 
 //---------------------------------
 //----------- Reviews ------------
@@ -3165,6 +3174,51 @@ app.delete("/api/admin/categories/:id", authenticateToken, async (req, res) => {
   }
 });
 
+//--------------------------------------------------
+//----------- Search (Full-Text Search) ------------
+//--------------------------------------------------
+
+// Ψάχνει σε courses + lessons + messages
+// app.get("/api/search", authenticateToken, async (req, res) => {
+//   const { q } = req.query;
+//   if (!q) return res.status(400).json({ error: "Query parameter q is required" });
+
+//   try {
+//     const courses = await pool.query(
+//       `SELECT id, title, description, 'course' AS type
+//        FROM courses
+//        WHERE search_vector @@ plainto_tsquery($1) AND NOT is_deleted
+//        LIMIT 10`,
+//       [q]
+//     );
+
+//     const lessons = await pool.query(
+//       `SELECT id, title, description, 'lesson' AS type
+//        FROM lessons
+//        WHERE search_vector @@ plainto_tsquery($1) AND NOT is_deleted
+//        LIMIT 10`,
+//       [q]
+//     );
+
+//     const messages = await pool.query(
+//       `SELECT id, subject AS title, content AS description, 'message' AS type
+//        FROM messages
+//        WHERE search_vector @@ plainto_tsquery($1) AND NOT is_deleted
+//        LIMIT 10`,
+//       [q]
+//     );
+
+//     res.json({
+//       courses: courses.rows,
+//       lessons: lessons.rows,
+//       messages: messages.rows,
+//     });
+//   } catch (err) {
+//     console.error("❌ Error performing search:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
 // Ψάχνει σε courses + lessons + messages
 app.get("/api/search", authenticateToken, async (req, res) => {
   const { q, type } = req.query;
@@ -3275,6 +3329,494 @@ app.get("/api/my-payments", authenticateToken, async (req, res) => {
   }
 });
 
+// //-----------------------------------------------------
+// //----------- Admin Endpoints για Payments ------------
+// //-----------------------------------------------------
+
+// // Όλες οι πληρωμές στην πλατφόρμα
+// // Admin: get all payments
+// app.get("/api/admin/payments", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can view all payments" });
+//   }
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT p.id, u.email AS student_email, c.title AS course_title,
+//               p.amount, p.currency, p.status, p.payment_method, p.created_at
+//        FROM payments p
+//        JOIN users u ON u.id = p.id
+//        JOIN courses c ON c.id = p.id
+//        ORDER BY p.created_at DESC`
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching payments (admin):", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+
+// // Όλες οι πληρωμές που έγιναν σε courses του lecturer
+// // Lecturer: get payments for my courses
+// app.get("/api/lecturer/payments", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "lecturer" && req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only lecturers or admins can view payments" });
+//   }
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT p.id, u.email AS student_email, c.title AS course_title,
+//               p.amount, p.currency, p.payment_status, p.payment_method, p.created_at
+//        FROM payments p
+//        JOIN users u ON u.id = p.user_id
+//        JOIN courses c ON c.id = p.course_id
+//        WHERE c.lecturer_id = $1
+//        ORDER BY p.created_at DESC`,
+//       [req.user.id]
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching payments (lecturer):", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Μικρό dashboard με συνολικά στοιχεία
+// // Admin: stats overview
+// app.get("/api/admin/stats", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can view stats" });
+//   }
+
+//   try {
+//     const stats = await pool.query(`
+//       SELECT 
+//         (SELECT COUNT(*) FROM users WHERE NOT is_deleted) AS total_users,
+//         (SELECT COUNT(*) FROM courses WHERE NOT is_deleted) AS total_courses,
+//         (SELECT COUNT(*) FROM payments) AS total_payments,
+//         (SELECT COALESCE(SUM(amount),0) FROM payments WHERE payment_status = 'completed') AS total_revenue
+//     `);
+
+//     res.json(stats.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error fetching stats:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// //------------------------------------------------------
+// //----------- Endpoints για User Management ------------
+// //------------------------------------------------------
+
+// // Λίστα με όλους τους χρήστες
+// // Admin: get all users
+// app.get("/api/admin/users", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can view users" });
+//   }
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT id, email, first_name, last_name, role, is_active, created_at 
+//        FROM users 
+//        WHERE NOT is_deleted 
+//        ORDER BY created_at DESC`
+//     );
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching users:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Admin: get single user
+// app.get("/api/admin/users/:id", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can view users" });
+//   }
+
+//   const { id } = req.params;
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT id, email, first_name, last_name, role, is_active, created_at, updated_at
+//        FROM users 
+//        WHERE id = $1 AND NOT is_deleted`,
+//       [id]
+//     );
+
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     res.json(result.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error fetching user:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Admin: create new user
+// app.post("/api/admin/users", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can create users" });
+//   }
+
+//   const { email, password, first_name, last_name, role } = req.body;
+
+//   try {
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     const result = await pool.query(
+//       `INSERT INTO users (email, password_hash, first_name, last_name, role, is_active)
+//        VALUES ($1, $2, $3, $4, $5, TRUE)
+//        RETURNING id, email, first_name, last_name, role, created_at`,
+//       [email, hashedPassword, first_name, last_name, role || "student"]
+//     );
+
+//     res.status(201).json(result.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error creating user:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Admin: update user
+// app.put("/api/admin/users/:id", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can update users" });
+//   }
+
+//   const { id } = req.params;
+//   const { first_name, last_name, role, is_active } = req.body;
+
+//   try {
+//     const result = await pool.query(
+//       `UPDATE users
+//        SET first_name = $1, last_name = $2, role = $3, is_active = $4
+//        WHERE id = $5 AND NOT is_deleted
+//        RETURNING id, email, first_name, last_name, role, is_active, updated_at`,
+//       [first_name, last_name, role, is_active, id]
+//     );
+
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     res.json(result.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error updating user:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// // Admin: delete (soft delete) user
+// app.delete("/api/admin/users/:id", authenticateToken, async (req, res) => {
+//   if (req.user.role !== "admin") {
+//     return res.status(403).json({ error: "Only admins can delete users" });
+//   }
+
+//   const { id } = req.params;
+
+//   try {
+//     const result = await pool.query(
+//       `UPDATE users
+//        SET is_deleted = TRUE, deleted_at = NOW()
+//        WHERE id = $1 AND NOT is_deleted
+//        RETURNING id, email`,
+//       [id]
+//     );
+
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     res.json({ message: "User deleted", user: result.rows[0] });
+//   } catch (err) {
+//     console.error("❌ Error deleting user:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// //------------------------------------------------
+// //----------- Notifications Endpoints ------------
+// //------------------------------------------------
+
+// // // Φέρνει όλες τις ειδοποιήσεις του logged-in χρήστη
+// // // Get my notifications
+// // app.get("/api/notifications", authenticateToken, async (req, res) => {
+// //   try {
+// //     const result = await pool.query(
+// //       `SELECT id, type, message, is_read, created_at
+// //        FROM notifications
+// //        WHERE user_id = $1
+// //        ORDER BY created_at DESC`,
+// //       [req.user.id]
+// //     );
+// //     res.json(result.rows);
+// //   } catch (err) {
+// //     console.error("❌ Error fetching notifications:", err.message);
+// //     res.status(500).json({ error: "Database error" });
+// //   }
+// // });
+
+// // // Μαρκάρει notification ως διαβασμένο
+// // // Mark notification as read
+// // app.put("/api/notifications/:id/read", authenticateToken, async (req, res) => {
+// //   const { id } = req.params;
+
+// //   try {
+// //     const result = await pool.query(
+// //       `UPDATE notifications
+// //        SET is_read = TRUE
+// //        WHERE id = $1 AND user_id = $2
+// //        RETURNING id, message, is_read`,
+// //       [id, req.user.id]
+// //     );
+
+// //     if (result.rows.length === 0) {
+// //       return res.status(404).json({ error: "Notification not found" });
+// //     }
+
+// //     res.json(result.rows[0]);
+// //   } catch (err) {
+// //     console.error("❌ Error updating notification:", err.message);
+// //     res.status(500).json({ error: "Database error" });
+// //   }
+// // });
+
+// // // Admin μπορεί να στείλει ειδοποίηση σε χρήστη (ή μαζικά)
+// // // Admin: send notification to a user
+// // app.post("/api/admin/notifications", authenticateToken, async (req, res) => {
+// //   if (req.user.role !== "admin") {
+// //     return res.status(403).json({ error: "Only admins can send notifications" });
+// //   }
+
+// //   const { user_id, type, message } = req.body;
+
+// //   try {
+// //     const result = await pool.query(
+// //       `INSERT INTO notifications (user_id, type, message, is_read) 
+// //        VALUES ($1, $2, $3, FALSE)
+// //        RETURNING id, user_id, type, message, created_at`,
+// //       [user_id, type || "info", message]
+// //     );
+
+// //     res.status(201).json(result.rows[0]);
+// //   } catch (err) {
+// //     console.error("❌ Error creating notification:", err.message);
+// //     res.status(500).json({ error: "Database error" });
+// //   }
+// // });
+
+
+// //--------------------------------------------
+// //----------- Messaging Endpoints ------------
+// //--------------------------------------------
+
+
+// // Αποστολή νέου μηνύματος (direct ή announcement ή forum post)
+// // Send a message
+// // app.post("/api/messages", authenticateToken, async (req, res) => {
+// //   const { recipient_id, course_id, subject, content, message_type, parent_message_id } = req.body;
+
+// //   try {
+// //     const result = await pool.query(
+// //       `INSERT INTO messages (sender_id, recipient_id, course_id, subject, content, message_type, parent_message_id)
+// //        VALUES ($1, $2, $3, $4, $5, $6, $7)
+// //        RETURNING id, sender_id, recipient_id, course_id, subject, content, message_type, parent_message_id, sent_at`,
+// //       [req.user.id, recipient_id || null, course_id || null, subject || null, content, message_type || "direct_message", parent_message_id || null]
+// //     );
+
+// //     res.status(201).json(result.rows[0]);
+// //   } catch (err) {
+// //     console.error("❌ Error sending message:", err.message);
+// //     res.status(500).json({ error: "Database error" });
+// //   }
+// // });
+
+// app.post("/api/messages", authenticateToken, async (req, res) => {
+//   const { recipient_id, course_id, subject, content, message_type, parent_message_id } = req.body;
+
+//   try {
+//     if (parent_message_id) {
+//       const parentCheck = await pool.query(
+//         "SELECT id FROM messages WHERE id = $1 AND NOT is_deleted", [parent_message_id]
+//       );
+//       if (parentCheck.rows.length === 0) {
+//         return res.status(400).json({ error: "Invalid parent_message_id" });
+//       }
+//     }
+
+//     const result = await pool.query(
+//       `INSERT INTO messages (sender_id, recipient_id, course_id, subject, content, message_type, parent_message_id)
+//        VALUES ($1, $2, $3, $4, $5, $6, $7)
+//        RETURNING id, sender_id, recipient_id, course_id, subject, content, message_type, parent_message_id, sent_at`,
+//       [req.user.id, recipient_id || null, course_id || null, subject || null, content, message_type || "direct_message", parent_message_id || null]
+//     );
+
+//     res.status(201).json(result.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error sending message:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+
+
+// // Φέρνει όλα τα μηνύματα του χρήστη (εισερχόμενα + απεσταλμένα)
+// // Get my messages (inbox + sent)
+// app.get("/api/messages", authenticateToken, async (req, res) => {
+//   try {
+//     const result = await pool.query(
+//       `SELECT m.id, m.sender_id, s.email AS sender_email,
+//               m.recipient_id, r.email AS recipient_email,
+//               m.course_id, c.title AS course_title,
+//               m.subject, m.content, m.message_type,
+//               m.parent_message_id, m.is_read, m.is_important, m.sent_at
+//        FROM messages m
+//        LEFT JOIN users s ON s.id = m.sender_id
+//        LEFT JOIN users r ON r.id = m.recipient_id
+//        LEFT JOIN courses c ON c.id = m.course_id
+//        WHERE m.sender_id = $1 OR m.recipient_id = $1
+//        ORDER BY m.sent_at DESC`,
+//       [req.user.id]
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching messages:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+
+// // Φέρνει thread συζήτησης (όλα τα replies ενός parent message)
+// // Το endpoint δίνει όλα τα μηνύματα ενός νήματος ξεκινώντας από το αρχικό μήνυμα id
+// // Get a message thread (all replies)
+// app.get("/api/messages/thread/:id", authenticateToken, async (req, res) => {
+//   const { id } = req.params;
+
+
+//   // WITH RECURSIVE -> ειδική δομή SQL που επιτρέπει να γράφουμε ερωτήματα που 
+//   // αναδρομικά "σκαρφαλώνουν" σε ιεραρχικά δεδομένα (όπως δέντρα ή νήματα μηνυμάτων)
+//   // επιτρέπει σε ένα query να κάνει επανάληψη (recursion) - για δεδομένα με ιεραρχική σχέση
+//   // UNION ALL: συνενώνει τα αποτελέσματα των δύο SELECT - ΔΕΝ αφαιρεί διπλότυπα 
+//   // UNION: συνενώνει αποτελέσματα ΚΑΙ αφαιρεί διπλότυπα
+
+//   try {
+//     const result = await pool.query(
+//       `WITH RECURSIVE thread AS (
+//          SELECT * FROM messages WHERE id = $1
+//          UNION ALL
+//          SELECT m.* FROM messages m
+//          JOIN thread t ON m.parent_message_id = t.id
+//        )
+//        SELECT t.id, t.sender_id, s.email AS sender_email,
+//               t.recipient_id, r.email AS recipient_email,
+//               t.subject, t.content, t.message_type,
+//               t.is_read, t.sent_at
+//        FROM thread t
+//        LEFT JOIN users s ON s.id = t.sender_id
+//        LEFT JOIN users r ON r.id = t.recipient_id
+//        ORDER BY t.sent_at ASC`,
+//       [id]
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("❌ Error fetching thread:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+
+// // Μαρκάρει μήνυμα ως διαβασμένο
+// // Mark message as read
+// app.put("/api/messages/:id/read", authenticateToken, async (req, res) => {
+//   const { id } = req.params;
+
+//   try {
+//     const result = await pool.query(
+//       `UPDATE messages
+//        SET is_read = TRUE, read_at = NOW()
+//        WHERE id = $1 AND recipient_id = $2
+//        RETURNING id, subject, is_read, read_at`,
+//       [id, req.user.id]
+//     );
+
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ error: "Message not found" });
+//     }
+
+//     res.json(result.rows[0]);
+//   } catch (err) {
+//     console.error("❌ Error marking message as read:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+
+// // Soft delete message
+// app.delete("/api/messages/:id", authenticateToken, async (req, res) => {
+//   const { id } = req.params;
+
+//   try {
+//     const result = await pool.query(
+//       `UPDATE messages
+//        SET is_deleted = TRUE, deleted_at = NOW()
+//        WHERE id = $1 AND (sender_id = $2 OR recipient_id = $2)
+//        RETURNING id, subject`,
+//       [id, req.user.id]
+//     );
+
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ error: "Message not found or not yours" });
+//     }
+
+//     res.json({ message: "Message deleted", messageData: result.rows[0] });
+//   } catch (err) {
+//     console.error("❌ Error deleting message:", err.message);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+
+
+
+
+
+
+// // Upload video for lesson
+// app.post("/api/lessons/:lessonId/upload/video", authenticateToken, uploadVideo.single("video"), async (req, res) => {
+//     if (req.user.role !== "lecturer" && req.user.role !== "admin") {
+//       return res.status(403).json({ error: "Only lecturers/admins can upload videos" });
+//     }
+
+//     const { lessonId } = req.params;
+//     const file = req.file;
+
+//     try {
+//       await pool.query(
+//         `UPDATE lessons
+//          SET video_path = $1, video_filename = $2, video_size = $3
+//          WHERE id = $4 AND NOT is_deleted
+//          RETURNING id, title, video_filename, video_size, video_path`,
+//         [file.path, file.originalname, file.size, lessonId]
+//       );
+
+//       res.json({ message: "Video uploaded successfully", file });
+//     } catch (err) {
+//       console.error("❌ Error uploading video:", err.message);
+//       res.status(500).json({ error: "Database error" });
+//     }
+//   }
+// );
+
+
 // Upload PDF for lesson — αποθήκευση στο Google Drive
 app.post(
   "/api/lessons/:lessonId/upload/pdf",
@@ -3331,6 +3873,10 @@ app.post(
 // Serve PDFs statically
 app.use("/uploads", express.static("uploads"));
 
+
+
+
+
 // //-------------------------------------------
 // //----------- Messages 7/03/2026 ------------
 // //-------------------------------------------
@@ -3379,26 +3925,14 @@ app.get('/api/messages/:userId', authenticateToken, async (req, res) => {
   }
 });
 
-// Mark private messages as read
-app.post('/api/messages/:userId/read', authenticateToken, async (req, res) => {
-  const otherUserId = parseInt(req.params.userId);
-  try {
-    await pool.query(
-      `UPDATE messages SET read_at = NOW()
-       WHERE sender_id = $1 AND recipient_id = $2 AND read_at IS NULL`,
-      [otherUserId, req.user.id]
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Database error' });
-  }
-});
 
 // Get list of users I can chat with
+// Get users to chat with (sorted by last message)
 app.get('/api/users/chat-list', authenticateToken, async (req, res) => {
   const currentUserId = req.user.id;
 
   try {
+    // Όλοι οι χρήστες βλέπουν όλους (εκτός από τον εαυτό τους)
     const query = `
       SELECT
         u.id,
@@ -3406,8 +3940,7 @@ app.get('/api/users/chat-list', authenticateToken, async (req, res) => {
         u.last_name,
         u.email,
         u.role,
-        MAX(m.sent_at) as last_message_at,
-        EXISTS(SELECT 1 FROM messages m2 WHERE m2.sender_id = u.id AND m2.recipient_id = $1 AND m2.read_at IS NULL) as has_unread
+        MAX(m.sent_at) as last_message_at
       FROM users u
       LEFT JOIN messages m ON
         (m.sender_id = u.id AND m.recipient_id = $1) OR
@@ -3425,138 +3958,241 @@ app.get('/api/users/chat-list', authenticateToken, async (req, res) => {
   }
 });
 
-// ─── GROUP CHATS ───────────────────────────────────────────
 
-// Τα group chats του χρήστη
-app.get('/api/group-chats', authenticateToken, async (req, res) => {
+
+// // Job που τρέχει κάθε 1 ώρα
+// cron.schedule("1 * * * *", async () => {
+//   try {
+//     const query = `
+//       INSERT INTO daily_stats (date, new_users, new_enrollments,    total_revenue, active_students)
+//       VALUES (
+//           CURRENT_DATE,
+//           (SELECT COUNT(*) FROM users WHERE DATE(created_at) = CURRENT_DATE),
+//           (SELECT COUNT(*) FROM course_enrollments WHERE DATE(enrolled_at) = CURRENT_DATE),
+          
+//           (SELECT COALESCE(SUM(amount),0) FROM payments WHERE DATE(created_at) = CURRENT_DATE AND status='completed'),
+//           (SELECT COUNT(DISTINCT student_id) FROM course_enrollments WHERE DATE(enrolled_at) = CURRENT_DATE)
+//       )
+//       ON CONFLICT (date)
+//       DO UPDATE SET
+//         new_users = EXCLUDED.new_users,
+//         new_enrollments = EXCLUDED.new_enrollments,
+        
+//         total_revenue = EXCLUDED.total_revenue,
+//         active_students = EXCLUDED.active_students,
+//         created_at = NOW();
+//     `;
+// //completed_lessons,
+// //(SELECT COUNT(*) FROM lesson_completions WHERE DATE(completed_at) = CURRENT_DATE),
+// //completed_lessons = EXCLUDED.completed_lessons,
+
+//     await pool.query(query);
+//     console.log("✅ Daily stats updated at", new Date().toISOString());
+//   } catch (err) {
+//     console.error("❌ Error updating daily stats:", err.message);
+//   }
+// });
+
+
+
+
+
+// // // ----- 7. ΝΕΑ ΛΟΓΙΚΗ REDIS SUBSCRIBER -----
+// // // Αυτή η συνάρτηση τρέχει αυτόνομα και "ακούει" για μηνύματα
+// // async function setupRedisSubscription() {
+// //   await redisSubscriber.subscribe('course:*', (message, channel) => {
+// //     // channel = 'course:123'
+// //     // message = '{"id": 5, "sender_id": 1, ...}'
+    
+// //     console.log(`Message from Redis on channel ${channel}. Broadcasting to room...`);
+    
+// //     // Στείλτε το μήνυμα σε ΟΛΟΥΣ τους χρήστες (React)
+// //     // που είναι συνδεδεμένοι στο αντίστοιχο δωμάτιο (π.χ. 'course:123')
+// //     io.to(channel).emit('new_message', JSON.parse(message));
+// //   });
+// // }
+
+
+// ----- 8. ΕΝΗΜΕΡΩΜΕΝΗ ΣΥΝΑΡΤΗΣΗ ΕΚΚΙΝΗΣΗΣ -----
+async function startServer() {
   try {
-    const result = await pool.query(
-      `SELECT gc.id, gc.title, gc.course_id,
-              (SELECT COUNT(*) FROM group_chat_members WHERE chat_id = gc.id) as member_count,
-              (SELECT content FROM group_chat_messages WHERE chat_id = gc.id ORDER BY sent_at DESC LIMIT 1) as last_message,
-              (SELECT sent_at FROM group_chat_messages WHERE chat_id = gc.id ORDER BY sent_at DESC LIMIT 1) as last_message_at,
-              EXISTS(SELECT 1 FROM group_chat_messages gcm2
-               WHERE gcm2.chat_id = gc.id
-               AND gcm2.sent_at > COALESCE(gcm.last_read_at, '1970-01-01')
-               AND gcm2.sender_id != $1) as has_unread
-       FROM group_chats gc
-       JOIN group_chat_members gcm ON gcm.chat_id = gc.id AND gcm.user_id = $1
-       ORDER BY last_message_at DESC NULLS LAST, gc.title ASC`,
-      [req.user.id]
-    );
-    res.json(result.rows);
+    // 1. Σύνδεση στον Redis
+    await redisClient.connect();
+    await redisSubscriber.connect(); // <-- Σύνδεση ΚΑΙ του subscriber
+    console.log('✅ Επιτυχής σύνδεση με τον Redis server (x2)!');
+
+    // 2. Ξεκίνα να "ακούς" για μηνύματα chat
+    await setupRedisSubscription();
+    console.log('🎧 O Redis Subscriber "ακούει" για μηνύματα chat.');
+
+    // 3. Σύνδεση στην PostgreSQL
+    await pool.query('SELECT 1');
+    console.log('✅ Επιτυχής σύνδεση με την PostgreSQL!');
+
+    // 4. Εκκίνηση του Express (πλέον χρησιμοποιούμε το 'server', όχι το 'app')
+    // const PORT = process.env.PORT || 5000;
+    // server.listen(PORT, () => { // <-- ΑΛΛΑΓΗ: server.listen αντί για app.listen
+    //   console.log(`🚀 Server running at: http://localhost:${PORT}`);
+    // });
+
+//     server.listen(PORT, () => {
+//   console.log(`🚀 Server running at: http://localhost:${PORT}`);
+// });
+
   } catch (err) {
-    console.error('❌ group-chats list:', err.message);
-    res.status(500).json({ error: 'Database error' });
+    console.error('❌ Αποτυχία εκκίνησης του server.');
+    console.error(err);
+    process.exit(1);
+  }
+}
+
+// β. connect redis + setup subscriber BEFORE listen
+async function setupRedisSubscription() {
+  await redisSubscriber.connect();
+
+  // await redisSubscriber.pSubscribe('course:*', (message, channel) => {
+  //   io.to(channel).emit('new_message', JSON.parse(message));
+  // });
+  await redisSubscriber.pSubscribe('course:*', (message, channel) => {
+  try {
+    io.to(channel).emit('new_message', JSON.parse(message));
+  } catch (e) {
+    console.error('Invalid Redis message', e);
   }
 });
+  console.log('🎧 Redis Subscriber listening on course:*');
+}
 
-// Μηνύματα ενός group chat
-app.get('/api/group-chats/:chatId/messages', authenticateToken, async (req, res) => {
-  const { chatId } = req.params;
-  try {
-    // Έλεγχος membership
-    const mem = await pool.query(
-      `SELECT 1 FROM group_chat_members WHERE chat_id=$1 AND user_id=$2`,
-      [chatId, req.user.id]
-    );
-    if (mem.rows.length === 0) return res.status(403).json({ error: 'Not a member' });
 
-    const result = await pool.query(
-      `SELECT gcm.id, gcm.content, gcm.sent_at,
-              u.id as sender_id, u.first_name, u.last_name
-       FROM group_chat_messages gcm
-       JOIN users u ON u.id = gcm.sender_id
-       WHERE gcm.chat_id = $1
-       ORDER BY gcm.sent_at ASC`,
-      [chatId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('❌ group-chat messages:', err.message);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
+// ----- ΣΥΝΑΡΤΗΣΗ ΕΚΚΙΝΗΣΗΣ SERVER -----
+// Μετατρέπουμε την εκκίνηση σε async function
+// για να συνδεθούμε *πρώτα* στις βάσεις μας.
 
-// Mark group chat as read
-app.post('/api/group-chats/:chatId/read', authenticateToken, async (req, res) => {
-  const { chatId } = req.params;
-  try {
-    await pool.query(
-      `UPDATE group_chat_members SET last_read_at = NOW()
-       WHERE chat_id = $1 AND user_id = $2`,
-      [chatId, req.user.id]
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Members ενός group chat
-app.get('/api/group-chats/:chatId/members', authenticateToken, async (req, res) => {
-  const { chatId } = req.params;
-  try {
-    const result = await pool.query(
-      `SELECT u.id, u.first_name, u.last_name, u.role
-       FROM group_chat_members gcm
-       JOIN users u ON u.id = gcm.user_id
-       WHERE gcm.chat_id = $1
-       ORDER BY u.role DESC, u.first_name ASC`,
-      [chatId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// // ----- 8. ΕΝΗΜΕΡΩΜΕΝΗ ΣΥΝΑΡΤΗΣΗ ΕΚΚΙΝΗΣΗΣ -----
+// ε. startServer (ONLY ONCE)
+// async function startServer() {
+//   await redisClient.connect();
+//   await redisSubscriber.connect();
+//   await setupRedisSubscription();
+//   await pool.query('SELECT 1');
+//   server.listen(PORT);
+// }
 // async function startServer() {
 //   try {
-//     // 1. Σύνδεση στον Redis
 //     await redisClient.connect();
-//     await redisSubscriber.connect(); // <-- Σύνδεση ΚΑΙ του subscriber
-//     console.log('✅ Επιτυχής σύνδεση με τον Redis server (x2)!');
-
-//     // 2. Ξεκίνα να "ακούς" για μηνύματα chat
 //     await setupRedisSubscription();
-//     console.log('🎧 O Redis Subscriber "ακούει" για μηνύματα chat.');
+//     console.log('✅ Redis connected');
 
-//     // 3. Σύνδεση στην PostgreSQL
 //     await pool.query('SELECT 1');
-//     console.log('✅ Επιτυχής σύνδεση με την PostgreSQL!');
+//     console.log('✅ PostgreSQL connected');
 
-//     // 4. Εκκίνηση του Express (πλέον χρησιμοποιούμε το 'server', όχι το 'app')
-//     // const PORT = process.env.PORT || 5000;
-//     // server.listen(PORT, () => { // <-- ΑΛΛΑΓΗ: server.listen αντί για app.listen
-//     //   console.log(`🚀 Server running at: http://localhost:${PORT}`);
-//     // });
-
-// //     server.listen(PORT, () => {
-// //   console.log(`🚀 Server running at: http://localhost:${PORT}`);
-// // });
+//     const PORT = process.env.PORT || 5000;
+//     server.listen(PORT, () => {
+//       console.log(`🚀 Server running at http://localhost:${PORT}`);
+//     });
 
 //   } catch (err) {
-//     console.error('❌ Αποτυχία εκκίνησης του server.');
-//     console.error(err);
+//     console.error('❌ Server failed to start', err);
 //     process.exit(1);
 //   }
 // }
 
-// // β. connect redis + setup subscriber BEFORE listen
-// async function setupRedisSubscription() {
-//   await redisSubscriber.connect();
 
-//   // await redisSubscriber.pSubscribe('course:*', (message, channel) => {
-//   //   io.to(channel).emit('new_message', JSON.parse(message));
-//   // });
-//   await redisSubscriber.pSubscribe('course:*', (message, channel) => {
-//   try {
-//     io.to(channel).emit('new_message', JSON.parse(message));
-//   } catch (e) {
-//     console.error('Invalid Redis message', e);
-//   }
-// });
-//   console.log('🎧 Redis Subscriber listening on course:*');
-// }
+
+
+
+// //--------------------------------------------------------------------------------
+
+// // -------------------------------------------------
+// // -------------- REAL-TIME CHAT LOGIC -------------
+// // -------------------------------------------------
+
+// // io.on('connection', (socket) => {
+// //   console.log(`⚡ User connected: ${socket.id}`);
+
+// //   // 1. Join Room: Ο φοιτητής μπαίνει στο chat ενός μαθήματος
+// //   socket.on('join_room', async (courseId) => {
+// //     const room = `course:${courseId}`;
+// //     socket.join(room);
+// //     console.log(`User ${socket.id} joined room: ${room}`);
+
+// //     // (Προαιρετικά) Στείλε του τα 20 τελευταία μηνύματα από το Redis Cache
+// //     try {
+// //         const cachedMessages = await redisClient.lRange(`chat_history:${courseId}`, 0, 19);
+// //         // Τα μηνύματα είναι strings, τα κάνουμε parse σε JSON και τα αντιστρέφουμε (παλιά -> νέα)
+// //         const parsed = cachedMessages.map(msg => JSON.parse(msg)).reverse();
+// //         socket.emit('previous_messages', parsed);
+// //     } catch (e) {
+// //         console.error("Error fetching history", e);
+// //     }
+// //   });
+
+// //   // 2. Send Message: Ο φοιτητής στέλνει μήνυμα
+// //   socket.on('send_message', async (data) => {
+// //     // data = { course_id, sender_id, content, sender_name }
+// //     const { course_id, sender_id, content, sender_name } = data;
+// //     const room = `course:${course_id}`;
+
+// //     // Δημιουργία αντικειμένου μηνύματος
+// //     const messageData = {
+// //       sender_id,
+// //       sender_name, // Χρήσιμο για να φαίνεται το όνομα στο chat αμέσως
+// //       content,
+// //       course_id,
+// //       created_at: new Date().toISOString(),
+// //       type: 'live' // ένδειξη ότι είναι live
+// //     };
+
+// //     try {
+// //       // ΒΗΜΑ Α: Αποθήκευση στη Βάση (PostgreSQL) - Η "Αλήθεια"
+// //       const dbRes = await pool.query(
+// //         `INSERT INTO messages (sender_id, course_id, content, sent_at) 
+// //          VALUES ($1, $2, $3, NOW()) RETURNING id`,
+// //         [sender_id, course_id, content]
+// //       );
+// //       messageData.id = dbRes.rows[0].id; // Προσθέτουμε το πραγματικό ID
+
+// //       // ΒΗΜΑ Β: Αποθήκευση στο Redis Cache (Ιστορικό) - Η "Ταχύτητα"
+// //       // Αποθηκεύουμε ως string
+// //       await redisClient.lPush(`chat_history:${course_id}`, JSON.stringify(messageData));
+// //       await redisClient.lTrim(`chat_history:${course_id}`, 0, 99); // Κρατάμε μόνο τα 100 τελευταία
+
+// //       // ΒΗΜΑ Γ: Δημοσίευση (Publish) για να το δουν οι άλλοι
+// //       await redisClient.publish(room, JSON.stringify(messageData));
+
+// //     } catch (err) {
+// //       console.error("❌ Chat Error:", err);
+// //     }
+// //   });
+
+// //   socket.on('disconnect', () => {
+// //     console.log('User disconnected', socket.id);
+// //   });
+// // });
+
+
+
+
+// // --- REDIS SUBSCRIBER SETUP (Για να μοιράζει τα μηνύματα) ---
+// // Αυτό τρέχει μία φορά και "ακούει" όλα τα κανάλια course:*
+// // async function setupChatSubscriber() {
+// //     // await redisSubscriber.subscribe('patter', (message, channel) => {
+// //     //     // Προσοχή: Στην έκδοση redis v4+ το subscribe pattern είναι λίγο διαφορετικό,
+// //     //     // αλλά για απλότητα θα κάνουμε subscribe σε συγκεκριμένα κανάλια ή θα το χειριστούμε ως εξής:
+// //     // });
+    
+// //     // Εναλλακτικά, πιο απλά για τώρα:
+// //     // Κάνουμε pSubscribe (Pattern Subscribe) σε όλα τα "course:*"
+// //     await redisSubscriber.pSubscribe('course:*', (message, channel) => {
+// //         // Το channel θα είναι π.χ. "course:15"
+// //         // Το message είναι το JSON που στείλαμε πριν
+// //         io.to(channel).emit('receive_message', JSON.parse(message));
+// //     });
+// //     console.log("🎧 Redis Subscriber is listening on course:* channels...");
+// // }
+
+// //-----------------------------------------
+
+// // ----- 4. ΚΑΛΕΣΜΑ ΤΗΣ ΕΚΚΙΝΗΣΗΣ -----
+// // Αφαιρέστε το παλιό "app.listen(PORT, ...)" από το τέλος του αρχείου
+// // και βάλτε μόνο αυτό:
+// startServer();

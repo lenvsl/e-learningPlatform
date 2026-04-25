@@ -202,3 +202,20 @@
   display: flex; gap: 12px; flex-wrap: wrap;
   justify-content: center; margin-top: 8px;
 }
+
+.quiz-text-answer {
+  width: 100%;
+  background: #0f0f1e;
+  border: 1px solid #2d2d44;
+  border-radius: 8px;
+  color: #e2e8f0;
+  padding: 12px;
+  font-size: 14px;
+  resize: vertical;
+  margin-top: 8px;
+  box-sizing: border-box;
+}
+.quiz-text-answer:focus {
+  outline: none;
+  border-color: #7c3aed;
+}

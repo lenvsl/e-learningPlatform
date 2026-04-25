@@ -17,13 +17,14 @@ export default function StudentDashboard() {
   const [enrollments, setEnrollments] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading]         = useState(true);
+  const [showAllCourses, setShowAllCourses] = useState(false);
 
   useEffect(() => {
     const token = sessionStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
 
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = JSON.parse(decodeURIComponent(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
       if (payload.role !== 'student') { router.push('/login'); return; }
       setUser(payload);
       fetchData(token);
@@ -53,6 +54,16 @@ export default function StudentDashboard() {
   };
 
   // Stats
+  const handleUnenroll = async (enrollmentId, courseTitle) => {
+    if (!confirm(`Σίγουρα θέλεις να διαγραφείς από το "${courseTitle}";`)) return;
+    const token = sessionStorage.getItem('token');
+    await fetch(`http://localhost:5000/api/enrollments/${enrollmentId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    setEnrollments(prev => prev.filter(e => e.enrollment_id !== enrollmentId));
+  };
+
   const avgProgress = enrollments.length > 0
     ? Math.round(enrollments.reduce((s, e) => s + (e.progress_percentage || 0), 0) / enrollments.length)
     : 0;
@@ -61,7 +72,7 @@ export default function StudentDashboard() {
     { icon: '📚', value: enrollments.length,  label: 'Εγγεγραμμένα Μαθήματα' },
     { icon: '📈', value: `${avgProgress}%`,   label: 'Μέση Πρόοδος' },
     { icon: '🏆', value: certificates.length, label: 'Πιστοποιητικά', href: '/certificates' },
-    { icon: '✅', value: enrollments.filter(e => e.status === 'completed').length, label: 'Ολοκληρωμένα' },
+    { icon: '✅', value: enrollments.filter(e => (e.progress_percentage || 0) >= 100).length, label: 'Ολοκληρωμένα' },
   ];
 
   const quickActions = [
@@ -84,8 +95,8 @@ export default function StudentDashboard() {
       {/* Welcome */}
       <div className="db-welcome">
         <div>
-          <h1>Welcome back, <span>{user?.first_name || 'Student'}</span>! 👋</h1>
-          <p>Καλή συνέχεια στην πορεία σου</p>
+          <h1>Καλωσήρθες, <span>{user?.first_name || 'Student'}</span>!</h1>
+           <p>Εδώ μπορείς να δεις την πρόοδό σου, τα μαθήματά σου και να εξερευνήσεις νέα.</p>
         </div>
       </div>
 
@@ -125,35 +136,50 @@ export default function StudentDashboard() {
             <Link href="/courses" className="db-btn-primary">Εξερεύνηση Μαθημάτων</Link>
           </div>
         ) : (
-          <div className="db-courses-grid">
-            {enrollments.map(e => {
-              const diff = DIFFICULTY_LABELS[e.difficulty] || { label: e.difficulty, color: '' };
-              const progress = e.progress_percentage || 0;
-              return (
-                <Link key={e.enrollment_id} href={`/courses/${e.course_id}`} className="db-course-card">
-                  <div className="db-course-top">
-                    <span className={`db-diff ${diff.color}`}>{diff.label}</span>
-                    <span className="db-course-status">{e.status === 'completed' ? '✅ Ολοκληρώθηκε' : '📖 Σε εξέλιξη'}</span>
-                  </div>
-
-                  <h3>{e.title}</h3>
-                  <p className="db-course-desc">{e.short_description}</p>
-
-                  <div className="db-progress-wrap">
-                    <div className="db-progress-bar">
-                      <div className="db-progress-fill" style={{ width: `${progress}%` }} />
+          <>
+            <div className="db-courses-grid">
+              {(showAllCourses ? enrollments : enrollments.slice(0, 3)).map(e => {
+                const diff = DIFFICULTY_LABELS[e.difficulty] || { label: e.difficulty, color: '' };
+                const progress = e.progress_percentage || 0;
+                return (
+                  <div key={e.enrollment_id}>
+                  <Link href={`/courses/${e.course_id}`} className="db-course-card">
+                    <div className="db-course-top">
+                      <span className={`db-diff ${diff.color}`}>{diff.label}</span>
+                      <button
+                        onClick={ev => { ev.preventDefault(); handleUnenroll(e.enrollment_id, e.title); }}
+                        style={{background:'transparent',border:'1px solid #ef444466',borderRadius:'6px',color:'#f87171',fontSize:'11px',cursor:'pointer',padding:'2px 8px'}}
+                      >
+                        Απεγγραφή
+                      </button>
                     </div>
-                    <span className="db-progress-label">{progress}%</span>
-                  </div>
 
-                  <div className="db-course-meta">
-                    <span>👤 {e.lecturer_name}</span>
-                    <span>📖 {e.lesson_count || 0} μαθήματα</span>
+                    <h3>{e.title}</h3>
+                    <p className="db-course-desc">{e.short_description}</p>
+
+                    <div className="db-progress-wrap">
+                      <div className="db-progress-bar">
+                        <div className="db-progress-fill" style={{ width: `${progress}%` }} />
+                      </div>
+                      <span className="db-progress-label">{progress}%</span>
+                    </div>
+
+                    <div className="db-course-meta">
+                      <span>👤 {e.lecturer_name}</span>
+                      <span style={{marginLeft:'auto'}}> {e.lesson_count || 0} {e.lesson_count == 1 ? 'μάθημα' : 'μαθήματα'}</span>
+                    </div>
+                  </Link>
                   </div>
-                </Link>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+
+            {enrollments.length > 3 && (
+              <button className="db-show-more" onClick={() => setShowAllCourses(v => !v)}>
+                {showAllCourses ? '▲ Λιγότερα' : `▼ Εμφάνιση όλων (${enrollments.length})`}
+              </button>
+            )}
+          </>
         )}
       </div>
 

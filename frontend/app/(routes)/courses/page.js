@@ -27,6 +27,8 @@ export default function CoursesPage() {
   const [loadingInst, setLoadingInst]   = useState(true);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [error, setError]               = useState(null);
+  const [search, setSearch]             = useState('');
+  const [searchInput, setSearchInput]   = useState('');
 
   useEffect(() => {
     fetch('http://localhost:5000/api/institutions')
@@ -37,15 +39,16 @@ export default function CoursesPage() {
 
   useEffect(() => {
     setLoadingCourses(true);
-    const url = activeInst === 'all'
-      ? 'http://localhost:5000/api/courses'
-      : `http://localhost:5000/api/courses?institution_id=${activeInst}`;
+    const params = new URLSearchParams();
+    if (activeInst !== 'all') params.set('institution_id', activeInst);
+    if (search) params.set('search', search);
+    const url = `http://localhost:5000/api/courses${params.toString() ? '?' + params : ''}`;
 
     fetch(url)
       .then(r => r.json())
       .then(data => { setCourses(data); setLoadingCourses(false); })
       .catch(() => { setError('Σφάλμα φόρτωσης μαθημάτων.'); setLoadingCourses(false); });
-  }, [activeInst]);
+  }, [activeInst, search]);
 
   const activeInstData = institutions.find(i => i.id === activeInst);
 
@@ -57,7 +60,17 @@ export default function CoursesPage() {
       {/* Page Header */}
       <div className="courses-header">
         <h1>Εξερευνήστε τα Μαθήματα</h1>
-        <p>Πανεπιστήμιο Πατρών — επιλέξτε τμήμα για να δείτε τα διαθέσιμα μαθήματα</p>
+        <p>Πανεπιστήμιο Πατρών - Επιλέξτε τμήμα για να δείτε τα διαθέσιμα μαθήματα</p>
+        <form className="courses-search-form" onSubmit={e => { e.preventDefault(); setSearch(searchInput); }}>
+          <input
+            className="courses-search-input"
+            type="text"
+            placeholder="Αναζήτηση μαθήματος..."
+            value={searchInput}
+            onChange={e => { setSearchInput(e.target.value); if (e.target.value === '') setSearch(''); }}
+          />
+          <button className="courses-search-btn" type="submit">🔍</button>
+        </form>
       </div>
 
       <div className="courses-layout">
@@ -159,7 +172,6 @@ export default function CoursesPage() {
             </div>
 
             <h2 className="modal-title">{selectedCourse.title}</h2>
-            <p className="modal-desc">{selectedCourse.description || selectedCourse.short_description}</p>
 
             <div className="modal-info-grid">
               {[
@@ -196,8 +208,9 @@ export default function CoursesPage() {
             )}
 
             <div className="modal-actions">
-              <a href="/register" className="btn-enroll">Εγγραφή τώρα</a>
-              <button className="btn-close-modal" onClick={() => setSelectedCourse(null)}>Κλείσιμο</button>
+              {selectedCourse.description && (
+                <p className="modal-full-desc">{selectedCourse.description}</p>
+              )}
             </div>
           </div>
         </div>

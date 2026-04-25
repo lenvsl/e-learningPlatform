@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './PrivateChat.css';
 
-const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail }) => {
+const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail, onRead }) => {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -20,19 +20,23 @@ const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail
     scrollToBottom();
   }, [messages]);
 
-  // Fetch message history
+  // Fetch message history + mark as read
   useEffect(() => {
     const token = sessionStorage.getItem('token');
     setLoading(true);
-    
+
     fetch(`http://localhost:5000/api/messages/${otherUserId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
       .then(data => {
-        console.log('Message history:', data);
         setMessages(data);
         setLoading(false);
+        // Mark as read
+        fetch(`http://localhost:5000/api/messages/${otherUserId}/read`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(() => onRead && onRead(otherUserId));
       })
       .catch(err => {
         console.error('Error loading messages:', err);
@@ -66,8 +70,14 @@ const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail
 
     // Receive new message
     newSocket.on('new_message', (msg) => {
-      console.log('💬 New message:', msg);
       setMessages(prev => [...prev, msg]);
+      if (msg.sender_id !== currentUserId) {
+        const token = sessionStorage.getItem('token');
+        fetch(`http://localhost:5000/api/messages/${msg.sender_id}/read`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(() => onRead && onRead(msg.sender_id));
+      }
     });
 
     // Error
@@ -117,9 +127,9 @@ const PrivateChat = ({ currentUserId, otherUserId, otherUserName, otherUserEmail
             >
               <div className="message-content">{msg.content}</div>
               <div className="message-time">
-                {new Date(msg.sent_at).toLocaleTimeString([], { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
+                {new Date(msg.sent_at).toLocaleString('el-GR', {
+                  day: '2-digit', month: '2-digit', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit'
                 })}
               </div>
             </div>
